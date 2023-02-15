@@ -55,28 +55,6 @@ function spin_gates(s::IndsNetwork, params; Δβ=0.1, rev=true)
   return gates
 end
 
-function electron_gates(s::IndsNetwork, params; Δβ=0.1, rev=true)
-  gates = ITensor[]
-  for e in edges(s)
-    hj =
-      params["U"] * op("Nup", s[maybe_only(src(e))]) * op("Ndn", s[maybe_only(dst(e))]) +
-      params["t"] * op("Cdagup", s[maybe_only(src(e))]) * op("Cup", s[maybe_only(dst(e))]) +
-      params["t"] * op("Cdagdn", s[maybe_only(src(e))]) * op("Cdn", s[maybe_only(dst(e))])
-
-    if(Δβ != nothing)
-      Gj = exp(-Δβ * 0.5 * hj)
-      push!(gates, Gj)
-    else
-      push!(gates, hj)
-    end
-  end
-
-  if (rev)
-    append!(gates, reverse(gates))
-  end
-  return gates
-end
-
 function apply_gates(ψ::ITensorNetwork, gates, s::IndsNetwork; nvertices_per_partition = 1, maxdim, useenvs=  true)
 
   ψ = copy(ψ)
@@ -119,40 +97,30 @@ end
     
 
 function main()
-  n = 2
-  dims = (n, n, n)
+  n = 5
+  dims = (n, n)
   g = named_grid(dims)
-  maxdim = 2
-  nsweeps = 30
-
-  # s = siteinds("Electron", g)
-  # params = Dict([("U", 5.0), ("t", -1.0)])
-  # gates = electron_gates(s, params)
+  maxdim =2
 
   s = siteinds("S=1/2", g)
-  params = Dict([("Jx", -0.8), ("Jy", -0.0), ("Jz", 0.0), ("hx", 0.0), ("hy", 0.0), ("hz", 2.2)])
-  gates = spin_gates(s, params)
+  params = Dict([("Jx", -0.8), ("Jy", 1.2), ("Jz", 0.0), ("hx", 0.0), ("hy", 0.0), ("hz", 0.0)])
 
-  DMRG_backend(params, g, 100)
+  DMRG_backend(params, g, 4)
   ψ = ITensorNetwork(s, v -> "↑")
   ψSU = copy(ψ)
   ψBP = copy(ψ)
 
-  for i = 1:nsweeps
+  betas = vcat([0.1 for i =1:10])
+  for i = 1:length(betas)
+    gates = spin_gates(s, params; Δβ=betas[i])
     println("On Sweep "*string(i))
     ψSU = apply_gates(ψSU, gates, s; maxdim, useenvs = false)
     ψBP = apply_gates(ψBP, gates, s; maxdim)
+    ESU = calc_energy(ψSU, params, s, maxdim)
+    EBP = calc_energy(ψBP, params, s, maxdim)
+    @show ESU
+    @show EBP
   end
-
-  ESU = calc_energy(ψSU, params, s, maxdim)
-  EBP = calc_energy(ψBP, params, s, maxdim)
-  @show ESU
-  @show EBP
-
-
-
-
-
 end
 
 ITensors.disable_warn_order()
