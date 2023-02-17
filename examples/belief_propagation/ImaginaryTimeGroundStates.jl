@@ -97,7 +97,7 @@ end
     
 
 function main()
-  n = 5
+  n =3
   dims = (n, n)
   g = named_grid(dims)
   maxdim =2
@@ -105,7 +105,7 @@ function main()
   s = siteinds("S=1/2", g)
   params = Dict([("Jx", -0.8), ("Jy", 1.2), ("Jz", 0.0), ("hx", 0.0), ("hy", 0.0), ("hz", 0.0)])
 
-  DMRG_backend(params, g, 4)
+  DMRG_backend(params, g, 4, "S=1/2")
   ψ = ITensorNetwork(s, v -> "↑")
   ψSU = copy(ψ)
   ψBP = copy(ψ)
