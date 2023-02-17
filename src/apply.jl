@@ -60,12 +60,13 @@ function ITensors.apply(
       )
     else
       Rᵥ₁, Rᵥ₂ = factorize(
-        apply(o, Rᵥ₁ * Rᵥ₂), inds(Rᵥ₁); cutoff, maxdim, tags=ITensorNetworks.edge_tag(e)
-      )
+         apply(o, Rᵥ₁ * Rᵥ₂), inds(Rᵥ₁); cutoff, maxdim, tags=ITensorNetworks.edge_tag(e)
+       )
     end
 
     ψᵥ₁ = Qᵥ₁ * Rᵥ₁
     ψᵥ₂ = Qᵥ₂ * Rᵥ₂
+
 
     if normalize
       ψᵥ₁ ./= norm(ψᵥ₁)
