@@ -1,3 +1,4 @@
+#Added dags necessary for QN conservation. Might be a hack so needs checking...
 function sqrt_and_inv_sqrt(
   A::ITensor; ishermitian=false, cutoff=nothing, regularization=nothing
 )
@@ -5,17 +6,20 @@ function sqrt_and_inv_sqrt(
     A = map_diag(x -> x + regularization, A)
     sqrtA = sqrt_diag(A)
     inv_sqrtA = inv_diag(sqrtA)
-    return sqrtA, inv_sqrtA
+    return sqrtA, dag(inv_sqrtA)
   end
   @assert ishermitian
   D, U = eigen(A; ishermitian, cutoff)
-  D = map_diag(x -> x + regularization, D)
+  D = dag(map_diag(x -> x + regularization, D))
+
   sqrtD = sqrt_diag(D)
   # sqrtA = U * sqrtD * prime(dag(U))
-  sqrtA = noprime(sqrtD * U)
+  sqrtA = dag(noprime(sqrtD * U))
+
   inv_sqrtD = inv_diag(sqrtD)
   # inv_sqrtA = U * inv_sqrtD * prime(dag(U))
-  inv_sqrtA = noprime(inv_sqrtD * dag(U))
+  inv_sqrtA = dag(noprime(dag(inv_sqrtD) * dag(U)))
+
   return sqrtA, inv_sqrtA
 end
 
