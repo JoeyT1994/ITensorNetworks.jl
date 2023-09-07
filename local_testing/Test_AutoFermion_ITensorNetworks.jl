@@ -3,9 +3,17 @@ using ITensorNetworks
 using ITensors
 using Random
 using LinearAlgebra
-using ITensorNetworks: contract_inner, neighbor_vertices, message_tensors, belief_propagation, symmetric_to_vidal_gauge, approx_network_region, full_update_bp, get_environment
+using ITensorNetworks: contract_inner, neighbor_vertices, message_tensors, belief_propagation, symmetric_to_vidal_gauge, approx_network_region, full_update_bp, get_environment, sgnpres_sqrt_diag, inv_sgnpres_sqrt_diag, sqrt_and_inv_sqrt, map_diag, inv_diag, find_subgraph, symmetric_factorize, sqrt_diag, diagblocks,
+  initialize_bond_tensors, setindex_preserve_graph!
+using Dictionaries
+using Observers
+using NPZ
+using Statistics
 
 using SplitApplyCombine
+using Plots
+
+using NamedGraphs: decorate_graph_edges
 
 include("/mnt/home/jtindall/Documents/QuantumPhysics/JuliaCode/ExactDMRGBackend.jl")
 
@@ -29,11 +37,48 @@ function exp_ITensor(A::ITensor, beta::Union{Float64, ComplexF64}; nterms=10)
   return out
 end
 
-function ITensor_to_matrix(A::ITensor)
-  C_row, C_col = combiner(inds(A; plev=0)), combiner(inds(A; plev=1))
-  A_mat = matrix(A * C_row * C_col, combinedind(C_row), combinedind(C_col))
+function sgn_preserving_sqrt_and_inv_sqrt(
+  A::ITensor; ishermitian=false, cutoff=nothing, regularization=nothing
+)
+  if isdiag(A)
+    A = map_diag(x -> x + regularization, A)
+    sqrtA = sgnpres_sqrt_diag(A)
+    inv_sqrtA = inv_diag(sqrtA)
+    return sqrtA, inv_sqrtA
+  end
+  @assert ishermitian
+  D, U = eigen(A; ishermitian, cutoff)
+  D = map_diag(x -> x + regularization, D)
+  sqrtD = sgnpres_sqrt_diag(D)
+  # sqrtA = U * sqrtD * prime(dag(U))
+  sqrtA = noprime(sqrtD * U)
+  inv_sqrtD = inv_diag(sqrtD)
+  # inv_sqrtA = U * inv_sqrtD * prime(dag(U))
+  inv_sqrtA = noprime(inv_sqrtD * dag(U))
+  return sqrtA, inv_sqrtA
+end
 
-  return A_mat
+function fermionic_asymmetric_factorize(
+  A::ITensor, inds...; (observer!)=nothing, tags="", svd_kwargs...
+)
+  if !isnothing(observer!)
+    insert_function!(observer!, "singular_values" => (; singular_values) -> singular_values)
+  end
+  U, S, V = svd(A, inds...; lefttags=tags, righttags=tags, svd_kwargs...)
+  u = commonind(S, U)
+  v = commonind(S, V)
+
+  Fu = U
+  Fv = S*V
+
+  δᵤᵥ = copy(S)
+  ITensors.data(δᵤᵥ) .= true
+  S = denseblocks(S)
+  S *= prime(dag(δᵤᵥ), u)
+  S = diagblocks(S)
+
+  update!(observer!; singular_values=S)
+  return Fu, Fv
 end
 
 function Hubbard_gates(s::IndsNetwork; reverse_gates=true, imaginary_time=true, real_time = false, dbeta=-0.2)
@@ -43,7 +88,6 @@ function Hubbard_gates(s::IndsNetwork; reverse_gates=true, imaginary_time=true, 
     hj = -op("Cdag", s[vsrc]) * op("C", s[vdst]) + op("C", s[vsrc]) * op("Cdag", s[vdst])
     if imaginary_time
       push!(gates, exp_ITensor(hj, dbeta / 2))
-      #push!(gates, exp(-dbeta * hj /2))
     elseif real_time
       push!(gates, exp_ITensor(hj, 1.0*im*dbeta / 2))
     else
@@ -74,7 +118,8 @@ function calc_energy(s::IndsNetwork, ψ::ITensorNetwork; seq)
     E += contract_inner(ψO, ψ; sequence = seq)
   end
 
-  return E / contract_inner(ψ, ψ; sequence = seq), seq
+  z = contract_inner(ψ, ψ; sequence = seq)
+  return E / z, seq
 end
 
 function evolve_su(ψ::ITensorNetwork, gate::ITensor; svd_kwargs...)
@@ -84,52 +129,167 @@ function evolve_su(ψ::ITensorNetwork, gate::ITensor; svd_kwargs...)
   e_ind = only(commoninds(ψ[v⃗[1]], ψ[v⃗[2]]))
 
   theta = noprime(ψ[v⃗[1]]*ψ[v⃗[2]]*gate)
-  U, S, V = svd(theta, uniqueinds(ψ[v⃗[1]], ψ[v⃗[2]]); svd_kwargs...)
-  US_ind = only(commoninds(U, S))
-  ψ[v⃗[1]] = U
-  ψ[v⃗[2]] = S*V
-  new_ind = settags(US_ind, tags(e_ind))
-  replaceind!(ψ[v⃗[1]], US_ind, new_ind)
-  replaceind!(ψ[v⃗[2]], US_ind, new_ind)
-
+  ψ[v⃗[1]], ψ[v⃗[2]] = fermionic_asymmetric_factorize(theta, uniqueinds(ψ[v⃗[1]], ψ[v⃗[2]]); tags = tags(e_ind), svd_kwargs...)
 
   return ψ
 end
 
-function evolve_fu(ψ::ITensorNetwork, gate::ITensor; svd_kwargs...)
+function evolve_fu(ψ::ITensorNetwork, gate::ITensor, mts::DataGraph, ψψ::ITensorNetwork; svd_kwargs...)
+  cutoff = 1e-10
+  regularization = 1e-10
 
   ψ = copy(ψ)
   v⃗ = neighbor_vertices(ψ,  gate)
-
-  mts, ψψ =  fermion_bp(ψ)
+  e_ind = only(commoninds(ψ[v⃗[1]], ψ[v⃗[2]]))
 
   @assert length(v⃗) == 2
   v1, v2 = v⃗
 
+  s1 = find_subgraph((v1, 1), mts)
+  s2 = find_subgraph((v2, 1), mts)
+  obs = Observer()
+
   envs = get_environment(ψψ, mts, [(v1, 1), (v1, 2), (v2, 1), (v2, 2)])
 
-  envs = ITensor(envs)
+  envs = Vector{ITensor}(envs)
+  envs_v1 = filter(env -> hascommoninds(env, ψ[v⃗[1]]), envs)
 
-  ψ[v1], ψ[v2] = full_update_bp(gate, ψ, v⃗; envs, svd_kwargs...)
+  envs_v2 = filter(env -> hascommoninds(env, ψ[v⃗[2]]), envs)
 
-  return ψ
+
+  sqrt_and_inv_sqrt_envs_v1 =
+  sgn_preserving_sqrt_and_inv_sqrt.(envs_v1; ishermitian=true, cutoff, regularization)
+  sqrt_and_inv_sqrt_envs_v2 =
+  sgn_preserving_sqrt_and_inv_sqrt.(envs_v2; ishermitian=true, cutoff, regularization)
+  sqrt_envs_v1 = first.(sqrt_and_inv_sqrt_envs_v1)
+  inv_sqrt_envs_v1 = last.(sqrt_and_inv_sqrt_envs_v1)
+  sqrt_envs_v2 = first.(sqrt_and_inv_sqrt_envs_v2)
+  inv_sqrt_envs_v2 = last.(sqrt_and_inv_sqrt_envs_v2)
+
+  ψᵥ₁ = ITensors.contract([ψ[v⃗[1]]; sqrt_envs_v1])
+  ψᵥ₂ = ITensors.contract([ψ[v⃗[2]]; sqrt_envs_v2])
+
+  noprime!(ψᵥ₁)
+  noprime!(ψᵥ₂)
+
+  theta = noprime(ψᵥ₁*ψᵥ₂*gate)
+
+  ψᵥ₁, ψᵥ₂ = fermionic_asymmetric_factorize(theta, uniqueinds(ψᵥ₁,ψᵥ₂); tags = tags(e_ind),(observer!)=obs, svd_kwargs...)
+  S = only(obs.singular_values)
+  S /= norm(S)
+
+  ψᵥ₁ = ITensors.contract([ψᵥ₁; inv_sqrt_envs_v1])
+  ψᵥ₂ = ITensors.contract([ψᵥ₂; inv_sqrt_envs_v2])
+  noprime!(ψᵥ₁)
+  noprime!(ψᵥ₂)
+
+  ψ[v1], ψ[v2] = ψᵥ₁, ψᵥ₂
+
+  ψψ = norm_network(ψ)
+  mts[s1] = ITensorNetwork{vertextype(mts[s1])}(dictionary([(v1, 1) => ψψ[v1, 1], (v1, 2) => ψψ[v1, 2]]))
+  mts[s2] = ITensorNetwork{vertextype(mts[s2])}(dictionary([(v2, 1) => ψψ[v2, 1], (v2, 2) => ψψ[v2, 2]]))
+  mts[s1 => s2] = ITensorNetwork(dag(S))
+  mts[s2 => s1] = ITensorNetwork(S)
+
+  return ψ, ψψ, mts
 end
 
-function fermion_bp(ψ::ITensorNetwork)
-  ψψ = ψ ⊗ prime(dag(ψ); sites=[])
+"""initialize bond tensors of an ITN to identity matrices"""
+function initialize_bond_tensors_fermion(ψ::ITensorNetwork; index_map=prime)
+  bond_tensors = DataGraph{vertextype(ψ),ITensor,ITensor}(directed_graph(underlying_graph(ψ)))
 
-  mts = message_tensors(
-    ψψ; subgraph_vertices=collect(values(group(v -> v[1], vertices(ψψ)))), itensor_constructor=inds_e -> delta(inds_e)
-  )
-
-  for e in edges(mts)
-    mt_inds = [inds(mts[e][v]) for v in vertices(mts[e])]
-    mts[e] = ITensorNetwork(delta(mt_inds))
+  for e in edges(ψ)
+    index = commoninds(ψ[src(e)], ψ[dst(e)])
+    id_ = denseblocks(delta(index, index_map(index)))
+    bond_tensors[e] = id_
+    bond_tensors[reverse(e)] = dag(id_)
   end
 
-  mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
+  return bond_tensors
+end
 
-  return mts, ψψ
+_gate_vertices(o::ITensor, ψ) = neighbor_vertices(ψ, o)
+_gate_vertices(o::AbstractEdge, ψ) = [src(o), dst(o)]
+
+function apply_vidal_fermion(
+  o::Union{ITensor,NamedEdge},
+  ψ::AbstractITensorNetwork,
+  bond_tensors::DataGraph;
+  normalize=false,
+  apply_kwargs...,
+)
+  ψ = copy(ψ)
+  bond_tensors = copy(bond_tensors)
+  v⃗ = _gate_vertices(o, ψ)
+  if length(v⃗) == 2
+    e = NamedEdge(v⃗[1] => v⃗[2])
+    ψv1, ψv2 = ψ[src(e)], ψ[dst(e)]
+    e_ind = commonind(ψv1, ψv2)
+
+    for vn in neighbors(ψ, src(e))
+      if (vn != dst(e))
+        ψv1 = noprime(ψv1 * bond_tensors[vn => src(e)])
+      end
+    end
+
+    for vn in neighbors(ψ, dst(e))
+      if (vn != src(e))
+        ψv2 = noprime(ψv2 * bond_tensors[vn => dst(e)])
+      end
+    end
+
+    ψv1 = noprime(ψv1 * sgnpres_sqrt_diag(bond_tensors[dst(e) => src(e)]))
+    ψv2 = noprime(ψv2 * sgnpres_sqrt_diag(bond_tensors[src(e) => dst(e)]))
+
+    #Qᵥ₁, Rᵥ₁, Qᵥ₂, Rᵥ₂, theta = _contract_gate(o, ψv1, bond_tensors[e], ψv2)
+    theta = noprime!(ψv1*ψv2*o)
+
+    @show theta
+    @show uniqueinds(ψv1, ψv2)
+
+    U, S, V = ITensors.svd(
+      theta,
+      uniqueinds(ψv1, ψv2);
+      lefttags=ITensorNetworks.edge_tag(e),
+      righttags=ITensorNetworks.edge_tag(e),
+      apply_kwargs...,
+    )
+
+    ind_to_replace = commonind(V, S)
+    ind_to_replace_with = commonind(U, S)
+    replaceind!(S, ind_to_replace, ind_to_replace_with')
+    replaceind!(V, ind_to_replace, ind_to_replace_with)
+
+    ψv1, bond_tensors[e], bond_tensors[reverse(e)], ψv2 = U, S, dag(S), V
+
+    for vn in neighbors(ψ, src(e))
+      if (vn != dst(e))
+        ψv1 = noprime(ψv1 * inv_diag(bond_tensors[src(e) => vn]))
+      end
+    end
+
+    for vn in neighbors(ψ, dst(e))
+      if (vn != src(e))
+        ψv2 = noprime(ψv2 * inv_diag(bond_tensors[dst(e) => vn]))
+      end
+    end
+
+    if normalize
+      ψv1 /= norm(ψv1)
+      ψv2 /= norm(ψv2)
+      normalize!(bond_tensors[e])
+      normalize!(bond_tensors[reverse(e)])
+    end
+
+    setindex_preserve_graph!(ψ, ψv1, src(e))
+    setindex_preserve_graph!(ψ, ψv2, dst(e))
+
+    return ψ, bond_tensors
+
+  else
+    ψ = ITensors.apply(o, ψ; normalize)
+    return ψ, bond_tensors
+  end
 end
 
 """Take the expectation value of a an ITensor on an ITN using SBP"""
@@ -148,41 +308,103 @@ function expect_state_SBP(o::ITensor, ψ::AbstractITensorNetwork, ψψ::Abstract
 
 end
 
+function exact_dynamics_hopping_fermionic_model(A::Matrix, cidag_cj_init::Matrix, t::Float64)
+  F = eigen(A)
+  eigvals, U = F.values, F.vectors
+  Udag = adjoint(U)
+
+  ckdag_cl_init = Udag*cidag_cj_init*U
+  init_energy = sum(eigvals .* diag(ckdag_cl_init))
+  ckdag_cl_t = Diagonal(exp.(eigvals .* t .* im))*ckdag_cl_init*Diagonal(exp.(-eigvals .* t .* im))
+  final_energy = sum(eigvals .* diag(ckdag_cl_t))
+
+  cidag_cj_t = U*ckdag_cl_t*Udag
+  return cidag_cj_t
+end
+
+function re_gauge(ψ::ITensorNetwork, ψψ::ITensorNetwork, mts::DataGraph, s::IndsNetwork, χ::Int64; niters = 10)
+  gates = Hubbard_gates(s; dbeta=0.0, imaginary_time = false, real_time = true)
+  for i in 1:niters
+    for gate in gates
+      ψ, ψψ, mts = evolve_fu(ψ, gate, mts, ψψ; cutofff = 1e-16, maxdim = χ)
+    end
+  end
+
+  return ψ, ψψ, mts
+end
+
 function main()
   ITensors.enable_auto_fermion()
+  lattice = "ChainPBC"
 
-  n = 12
+  if lattice == "Chain"
+    n = 4
+    g = named_grid((n, 1))
+  elseif lattice == "ChainPBC"
+    n = 12
+    g = named_grid((n, 1))
+    add_edge!(g, (1,1) => (n, 1))
+  elseif lattice == "Hexagonal"
+    g = NamedGraphs.hexagonal_lattice_graph(3,3)
+  elseif lattice == "HeavyHexagonal"
+    g = NamedGraphs.hexagonal_lattice_graph(3,3)
+    g = decorate_graph_edges(g)
+  end
 
-  g = named_grid((n, 1))
-  g = NamedGraphs.hexagonal_lattice_graph(2,2)
+  g_vs = vertices(g)
+  A = Matrix(adjacency_matrix(g))
   s = siteinds("Fermion", g; conserve_qns=true)
-  #add_edge!(g, (1, 1) => (n, 1))
-  χ =2
+  χ =4
 
-  no_sweeps =10
-  dbetas = [-0.1 for i in 1:no_sweeps]
-  ψ = ITensorNetwork(s, v -> iseven(v[1] + v[2]) ? "Occ" : "Emp")
-  #seq = nothing
+  no_sweeps =5
+  dbetas = [-0.2 for i in 1:no_sweeps]
+  t_final = -sum(dbetas)
+  ψ = ITensorNetwork(s, v -> findfirst(==(v), g_vs) % 2 == 0 ? "Occ" : "Emp")
+
+  ψψ = ψ ⊗ prime(dag(ψ); sites=[])
+  mts = message_tensors(
+    ψψ; subgraph_vertices=collect(values(group(v -> v[1], vertices(ψψ)))), itensor_constructor= denseblocks ∘ delta)
+  mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
+
+  init_occs = [expect_state_SBP(op("N", s[v]), ψ, ψψ, mts) for v in vertices(g)]
+
+  cidag_cj_init = Matrix(Diagonal(init_occs))
+
+  seq = nothing
   for i in 1:no_sweeps
+    println("On Sweep $i")
     gates = Hubbard_gates(s; dbeta=dbetas[i], imaginary_time = false, real_time = true)
     for gate in gates
-      #ψ = ITensorNetworks.apply(gate, ψ; maxdim=χ)
-      ψ = evolve_su(ψ, gate; maxdim = χ, cutofff = 1e-16)
+      #ψ, bond_tensors = apply_vidal_fermion(gate, ψ, bond_tensors)
+      ψ, ψψ, mts = evolve_fu(ψ, gate, mts, ψψ; maxdim = χ, cutofff = 1e-16)
       #mts, ψψ =  fermion_bp(ψ)
       #ψ = evolve_fu(ψ, gate; maxdim = χ, cutofff = 1e-6)
     end
+
+    #ψ, ψψ, mts = re_gauge(ψ, ψψ, mts, s, χ; niters = 5)
     #E, seq = calc_energy(s, ψ; seq)
-    #@show E
+    #println("Current Energy $E")
   end
 
-  mts, ψψ =  fermion_bp(ψ)
+  #ψ, _ = vidal_to_symmetric_gauge(ψ, bond_tensors)
+  mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
 
-  @show [expect_state_SBP(op("N", s[v]), ψ, ψψ, mts) for v in vertices(g)]
+  final_occs =  real.([expect_state_SBP(op("N", s[v]), ψ, ψψ, mts) for v in vertices(g)])
+
+  cidag_cj_final_exact = exact_dynamics_hopping_fermionic_model(A, cidag_cj_init, t_final)
+
+  final_occs_exact = real.(diag(cidag_cj_final_exact))
+
+  @show final_occs
+  @show final_occs_exact
+
+  @show mean(abs.(final_occs - final_occs_exact))
+
+  #npzwrite("/mnt/home/jtindall/Documents/Data/ITensorNetworks/FreeFermions/"*lattice*"DynamicsBenchmarkBondDim"*string(χ)*"Tfinal"*string(round(t_final; digits =  2))*".npz", init_occs = init_occs, final_occs = final_occs, final_occs_exact = final_occs_exact)
 
 
-  params = Dict([("U", 0.0), ("t", -1.0)])
-
-  fermion_DMRG_backend(params, g, 50)
+  #params = Dict([("U", 0.0), ("t", -1.0)])
+  #fermion_DMRG_backend(params, g, χ*χ)
 
   return ITensors.disable_auto_fermion()
 end
