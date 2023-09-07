@@ -39,6 +39,8 @@ inv_diag(it::ITensor) = map_diag(inv, it)
 invsqrt_diag(it::ITensor) = map_diag(inv ∘ sqrt, it)
 pinv_diag(it::ITensor) = map_diag(pinv, it)
 pinvsqrt_diag(it::ITensor) = map_diag(pinv ∘ sqrt, it)
+sgnpres_sqrt_diag(it::ITensor) = map_diag(sqrt ∘ abs, it )
+inv_sgnpres_sqrt_diag(it::ITensor) = map_diag(inv ∘ sqrt ∘ abs, it )
 
 # Analagous to `denseblocks`.
 # Extract the diagonal entries into a diagonal tensor.
