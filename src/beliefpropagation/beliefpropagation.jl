@@ -22,12 +22,13 @@ function message_tensors_skeleton(subgraphs::DataGraph)
 end
 
 function message_tensors(
-  subgraphs::DataGraph; itensor_constructor=inds_e -> dense(delta(inds_e))
+  subgraphs::DataGraph; itensor_constructor=map(inds_e -> dense(delta(inds_e)), inds_e)
 )
   mts = message_tensors_skeleton(subgraphs)
   for e in edges(subgraphs)
-    inds_e = commoninds(subgraphs[src(e)], subgraphs[dst(e)])
-    mts[e] = ITensorNetwork(map(itensor_constructor, inds_e))
+    inds_e = [i for i in commoninds(subgraphs[src(e)], subgraphs[dst(e)])]
+    itensors = itensor_constructor(inds_e)
+    mts[e] = ITensorNetwork(itensors)
     mts[reverse(e)] = dag(mts[e])
   end
   return mts
