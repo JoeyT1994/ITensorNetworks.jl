@@ -4,52 +4,22 @@ function sqrt_and_inv_sqrt(
 )
   if isdiag(A)
     A = map_diag(x -> x + regularization, A)
-    sqrtA = sqrt_diag(A)
+    sqrtA = sgnpres_sqrt_diag(A)
     inv_sqrtA = inv_diag(sqrtA)
-    return sqrtA, dag(inv_sqrtA)
+    return sqrtA, inv_sqrtA
   end
   @assert ishermitian
   D, U = eigen(A; ishermitian, cutoff)
-  D = dag(map_diag(x -> x + regularization, D))
+  D = map_diag(x -> x + regularization, D)
 
-  sqrtD = sqrt_diag(D)
+  sqrtD = sgnpres_sqrt_diag(D)
   # sqrtA = U * sqrtD * prime(dag(U))
-  sqrtA = dag(noprime(sqrtD * U))
+  sqrtA = noprime(dag(sqrtD) * U)
 
   inv_sqrtD = inv_diag(sqrtD)
   # inv_sqrtA = U * inv_sqrtD * prime(dag(U))
-  inv_sqrtA = dag(noprime(dag(inv_sqrtD) * dag(U)))
-
-  return sqrtA, inv_sqrtA
-end
-
-function symmetric_factorize(
-  A::ITensor, inds...; (observer!)=nothing, tags="", svd_kwargs...
-)
-  if !isnothing(observer!)
-    insert_function!(observer!, "singular_values" => (; singular_values) -> singular_values)
-  end
-  U, S, V = svd(A, inds...; lefttags=tags, righttags=tags, svd_kwargs...)
-  u = commonind(S, U)
-  v = commonind(S, V)
-  sqrtS = sqrt_diag(S)
-  Fu = U * sqrtS
-  Fv = V * sqrtS
-  if hasqns(A)
-    # Hack to make a generalized (non-diagonal) `δ` tensor.
-    # TODO: Make this easier, `ITensors.δ` doesn't work here.
-    δᵤᵥ = copy(S)
-    ITensors.data(δᵤᵥ) .= true
-    Fu *= dag(δᵤᵥ)
-    S = denseblocks(S)
-    S *= prime(dag(δᵤᵥ), u)
-    S = diagblocks(S)
-  else
-    Fu = replaceinds(Fu, v => u)
-    S = replaceinds(S, v => u')
-  end
-  update!(observer!; singular_values=S)
-  return Fu, Fv
+  inv_sqrtA = noprime(inv_sqrtD * dag(U))
+  return dag(sqrtA), dag(inv_sqrtA)
 end
 
 function full_update_bp(
@@ -101,6 +71,11 @@ function full_update_bp(
 end
 
 function simple_update_bp_full(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwargs...)
+
+  if !isnothing(observer!)
+    insert_function!(observer!, "singular_values" => (; singular_values) -> singular_values)
+  end
+
   cutoff = 10 * eps(real(scalartype(ψ)))
   regularization = 10 * eps(real(scalartype(ψ)))
   envs_v1 = filter(env -> hascommoninds(env, ψ[v⃗[1]]), envs)
@@ -125,20 +100,38 @@ function simple_update_bp_full(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwa
   v1_inds = [v1_inds; siteinds(ψ, v⃗[1])]
   v2_inds = [v2_inds; siteinds(ψ, v⃗[2])]
   e = v⃗[1] => v⃗[2]
-  ψᵥ₁, ψᵥ₂ = symmetric_factorize(oψ, v1_inds; tags=edge_tag(e), observer!, apply_kwargs...)
+
+  Sref = Ref{ITensor}()
+  ψᵥ₁, ψᵥ₂, spec = ITensors.factorize(oψ, v1_inds; which_decomp = "svd", (singular_values!)=Sref, leftdir = ITensors.Out, rightdir = ITensors.Out, lefttags=edge_tag(e), righttags=edge_tag(e), ortho = "none", apply_kwargs...)
+  u = commonind(ψᵥ₁, ψᵥ₂)
+  S = diagITensor(u', dag(u))
+  ITensors.map_diag!(v->v, S, Sref[])
+  S /= norm(S)
+  update!(observer!; singular_values=S)
+
   for inv_sqrt_env_v1 in inv_sqrt_envs_v1
     # TODO: `dag` here?
     ψᵥ₁ *= inv_sqrt_env_v1
   end
+
   for inv_sqrt_env_v2 in inv_sqrt_envs_v2
     # TODO: `dag` here?
     ψᵥ₂ *= inv_sqrt_env_v2
   end
+
+  noprime!(ψᵥ₁)
+  noprime!(ψᵥ₂)
+
   return ψᵥ₁, ψᵥ₂
 end
 
 # Reduced version
 function simple_update_bp(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwargs...)
+
+  if !isnothing(observer!)
+    insert_function!(observer!, "singular_values" => (; singular_values) -> singular_values)
+  end
+
   cutoff = 10 * eps(real(scalartype(ψ)))
   regularization = 10 * eps(real(scalartype(ψ)))
   envs_v1 = filter(env -> hascommoninds(env, ψ[v⃗[1]]), envs)
@@ -153,6 +146,10 @@ function simple_update_bp(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwargs..
   inv_sqrt_envs_v2 = last.(sqrt_and_inv_sqrt_envs_v2)
   ψᵥ₁ = contract([ψ[v⃗[1]]; sqrt_envs_v1])
   ψᵥ₂ = contract([ψ[v⃗[2]]; sqrt_envs_v2])
+
+  noprime!(ψᵥ₁)
+  noprime!(ψᵥ₂)
+
   sᵥ₁ = siteinds(ψ, v⃗[1])
   sᵥ₂ = siteinds(ψ, v⃗[2])
   Qᵥ₁, Rᵥ₁ = qr(ψᵥ₁, uniqueinds(uniqueinds(ψᵥ₁, ψᵥ₂), sᵥ₁))
@@ -161,14 +158,25 @@ function simple_update_bp(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwargs..
   rᵥ₂ = commoninds(Qᵥ₂, Rᵥ₂)
   oR = apply(o, Rᵥ₁ * Rᵥ₂)
   e = v⃗[1] => v⃗[2]
-  Rᵥ₁, Rᵥ₂ = symmetric_factorize(
-    oR, unioninds(rᵥ₁, sᵥ₁); tags=edge_tag(e), observer!, apply_kwargs...
-  )
+
+  Sref = Ref{ITensor}()
+  Rᵥ₁, Rᵥ₂, spec = ITensors.factorize(oR, unioninds(rᵥ₁, sᵥ₁); which_decomp = "svd", (singular_values!)=Sref, leftdir = ITensors.Out, rightdir = ITensors.Out, lefttags=edge_tag(e), righttags=edge_tag(e), ortho = "none", apply_kwargs...)
+  u = commonind(Rᵥ₁, Rᵥ₂)
+  S = diagITensor(u', dag(u))
+  ITensors.map_diag!(v->v, S, Sref[])
+  S /= norm(S)
+  update!(observer!; singular_values=S)
+
   # TODO: `dag` here?
   Qᵥ₁ = contract([Qᵥ₁; inv_sqrt_envs_v1])
   Qᵥ₂ = contract([Qᵥ₂; inv_sqrt_envs_v2])
   ψᵥ₁ = Qᵥ₁ * Rᵥ₁
   ψᵥ₂ = Qᵥ₂ * Rᵥ₂
+
+
+  noprime!(ψᵥ₁)
+  noprime!(ψᵥ₂)
+
   return ψᵥ₁, ψᵥ₂
 end
 
