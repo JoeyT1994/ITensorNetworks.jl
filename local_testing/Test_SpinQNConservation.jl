@@ -15,7 +15,7 @@ using Plots
 
 using NamedGraphs: decorate_graph_edges
 
-include("/mnt/home/jtindall/Documents/QuantumPhysics/JuliaCode/ExactDMRGBackend.jl")
+include("/mnt/home/jtindall/.julia/dev/ITensorNetworks/local_testing/DMRGBackend.jl")
 
 
 function XXZ_gates(s::IndsNetwork; reverse_gates=true, imaginary_time=true, real_time = false, dbeta=-0.2, Δ = 1.0)
@@ -40,7 +40,7 @@ function XXZ_gates(s::IndsNetwork; reverse_gates=true, imaginary_time=true, real
 end
 
 function calc_energy(s::IndsNetwork, ψ::ITensorNetwork; seq, Δ = 1.0)
-  gates = XXZ(s; reverse_gates=false, imaginary_time=false, Δ)
+  gates = XXZ_gates(s; reverse_gates=false, imaginary_time=false, Δ)
   E = 0
 
   if isnothing(seq)
@@ -51,7 +51,7 @@ function calc_energy(s::IndsNetwork, ψ::ITensorNetwork; seq, Δ = 1.0)
   end
 
   for gate in gates
-    ψO = apply(ψ, gate; cutoff = 1e-16)
+    ψO = apply(gate, ψ; cutoff=1e-16)
     E += contract_inner(ψO, ψ; sequence = seq)
   end
 
@@ -108,19 +108,21 @@ end
 
 function main()
 
-  n = 8
-  g = named_grid((n, 1))
+  n = 4
+  g = named_grid((n, n))
   #add_edge!(g, (1,1) => (n,1))
+  #g = NamedGraphs.hexagonal_lattice_graph(3,3)
+  #g = decorate_graph_edges(g)
 
   g_vs = vertices(g)
   s = siteinds("S=1/2", g; conserve_qns=true)
-  χ =32
-  Δ = 0.0
+  χ =4
+  Δ = 0.2
 
   no_sweeps =5
-  dbetas = [-0.1 for i in 1:no_sweeps]
+  dbetas = [-0.05 for i in 1:no_sweeps]
   t_final = -sum(dbetas)
-  ψ = ITensorNetwork(s, v -> findfirst(==(v), g_vs) % 2 == 0 ? "Up" : "Dn")
+  ψ = ITensorNetwork(s, v -> findfirst(==(v), g_vs) % 2 == 0 ? "Dn" : "Up")
   ψψ = ψ ⊗ prime(dag(ψ); sites=[])
   mts = message_tensors(
     ψψ; subgraph_vertices=collect(values(group(v -> v[1], vertices(ψψ)))), itensor_constructor= denseblocks ∘ delta)
@@ -129,35 +131,35 @@ function main()
 
   seq = nothing
   for i in 1:no_sweeps
-    println("On Sweep $i")
+    #println("On Sweep $i")
     gates = XXZ_gates(s; dbeta=dbetas[i], imaginary_time = false, real_time = true, Δ)
     for gate in gates
       ψ, ψψ, mts = evolve_fu(ψ, gate, mts, ψψ; maxdim = χ, cutofff = 1e-16)
     end
 
-    mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters = 10, target_precision = 1e-5)
+    #mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters = 20, target_precision = 1e-3)
 
     #ψ, ψψ, mts = re_gauge(ψ, ψψ, mts, s, χ; niters = 5)
-    #E, seq = calc_energy(s, ψ; seq)
+    #E, seq = calc_energy(s, ψ; seq, Δ)
     #println("Current Energy $E")
   end
+
+  println("Belief Propagation Evolution Finished")
 
   mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters = 10, target_precision = 1e-5)
 
   final_mags =  real.([expect_state_SBP(op("Z", s[v]), ψ, ψψ, mts) for v in vertices(g)])
 
-  @show t_final
-
   @show init_mags
   @show final_mags
-
-  @show abs(sum(final_mags) - sum(init_mags))
 
   #npzwrite("/mnt/home/jtindall/Documents/Data/ITensorNetworks/FreeFermions/"*lattice*"DynamicsBenchmarkBondDim"*string(χ)*"Tfinal"*string(round(t_final; digits =  2))*".npz", init_occs = init_occs, final_occs = final_occs, final_occs_exact = final_occs_exact)
 
 
-  #params = Dict([("U", 0.0), ("t", -1.0)])
-  #fermion_DMRG_backend(params, g, χ*χ)
+  params = Dict([("J", -1.0), ("Δ", Δ)])
+  #spin_DMRG_backend(params, g, 50)
+  delta_t = 0.05
+  spin_TDVP_backend(params, g, 100, t_final, delta_t)
 
 end
 
