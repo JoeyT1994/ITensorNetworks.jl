@@ -35,11 +35,12 @@ function vidal_gauge(
     Y_D, Y_U = eigen(
       ITensor(mts[s2 => s1]); ishermitian=true, cutoff=eigen_message_tensor_cutoff
     )
-    X_D, Y_D = map_diag(x -> x + regularization, X_D),
-    map_diag(x -> x + regularization, Y_D)
+    X_D, Y_D = ITensors.map_diag(x -> x + regularization, X_D),
+    ITensors.map_diag(x -> x + regularization, Y_D)
 
-    rootX_D, rootY_D = sqrt_diag(X_D), sqrt_diag(Y_D)
-    inv_rootX_D, inv_rootY_D = invsqrt_diag(X_D), invsqrt_diag(Y_D)
+    rootX_D, rootY_D = ITensors.map_diag(sqrt, X_D), ITensors.map_diag(sqrt, Y_D)
+    inv_rootX_D, inv_rootY_D = ITensors.map_diag(inv ∘ sqrt, X_D),
+    ITensors.map_diag(inv ∘ sqrt, Y_D)
     rootX = X_U * rootX_D * prime(dag(X_U))
     rootY = Y_U * rootY_D * prime(dag(Y_U))
     inv_rootX = X_U * inv_rootX_D * prime(dag(X_U))
@@ -120,12 +121,12 @@ function vidal_to_symmetric_gauge(ψ::ITensorNetwork, bond_tensors::DataGraph)
   for e in edges(ψsymm)
     vsrc, vdst = src(e), dst(e)
     s1, s2 = find_subgraph((vsrc, 1), ψsymm_mts), find_subgraph((vdst, 1), ψsymm_mts)
-    root_S = sqrt_diag(bond_tensors[e])
+    root_S = ITensors.map_diag(sqrt, bond_tensors[e])
     setindex_preserve_graph!(ψsymm, noprime(root_S * ψsymm[vsrc]), vsrc)
     setindex_preserve_graph!(ψsymm, noprime(root_S * ψsymm[vdst]), vdst)
 
-    ψsymm_mts[s1 => s2], ψsymm_mts[s2 => s1] = ITensorNetwork(bond_tensors[e]),
-    ITensorNetwork(bond_tensors[e])
+    ψsymm_mts[s1 => s2], ψsymm_mts[s2 => s1] = ITensorNetwork(denseblocks(bond_tensors[e])),
+    ITensorNetwork(denseblocks(bond_tensors[e]))
   end
 
   return ψsymm, ψsymm_mts
@@ -164,7 +165,9 @@ function symmetric_to_vidal_gauge(
     vsrc, vdst = src(e), dst(e)
     s1, s2 = find_subgraph((vsrc, 1), mts), find_subgraph((vdst, 1), mts)
     bond_tensors[e] = ITensor(mts[s1 => s2])
-    invroot_S = invsqrt_diag(map_diag(x -> x + regularization, bond_tensors[e]))
+    invroot_S = ITensors.map_diag(
+      inv ∘ sqrt, ITensors.map_diag(x -> x + regularization, bond_tensors[e])
+    )
     setindex_preserve_graph!(ψ_vidal, noprime(invroot_S * ψ_vidal[vsrc]), vsrc)
     setindex_preserve_graph!(ψ_vidal, noprime(invroot_S * ψ_vidal[vdst]), vdst)
   end

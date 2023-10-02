@@ -5,17 +5,17 @@ function expect(
   maxdim=nothing,
   ortho=false,
   sequence=nothing,
-  vertices=vertices(ψ),
+  expec_vertices=vertices(ψ),
 )
   s = siteinds(ψ)
   ElT = promote_itensor_eltype(ψ)
   # ElT = ishermitian(ITensors.op(op, s[vertices[1]])) ? real(ElT) : ElT
-  res = Dictionary(vertices, Vector{ElT}(undef, length(vertices)))
+  res = Dictionary(expec_vertices, Vector{ElT}(undef, length(expec_vertices)))
   if isnothing(sequence)
     sequence = contraction_sequence(inner_network(ψ, ψ; flatten=true))
   end
   normψ² = norm_sqr(ψ; sequence)
-  for v in vertices
+  for v in expec_vertices
     O = ITensor(Op(op, v), s)
     Oψ = apply(O, ψ; cutoff, maxdim, ortho)
     res[v] = contract_inner(ψ, Oψ; sequence) / normψ²
@@ -52,4 +52,50 @@ function expect(
   sequence=nothing,
 )
   return expect(sum(Ops.terms(opsum_sum)), ψ; cutoff, maxdim, ortho, sequence)
+end
+
+function expect_BP(
+  op::String,
+  ψ::AbstractITensorNetwork,
+  ψψ::AbstractITensorNetwork,
+  mts::DataGraph;
+  expect_vertices=vertices(ψ),
+)
+  s = siteinds(ψ)
+  ElT = promote_itensor_eltype(ψ)
+  res = Dictionary(expect_vertices, Vector{ElT}(undef, length(expect_vertices)))
+  for v in expect_vertices
+    O = ITensor(Op(op, v), s)
+    numerator_network = approx_network_region(
+      ψψ, mts, [(v, 1)]; verts_tn=ITensorNetwork(ITensor[apply(O, ψ[v])])
+    )
+    denominator_network = approx_network_region(ψψ, mts, [(v, 1)])
+    res[v] = contract(numerator_network)[] / contract(denominator_network)[]
+  end
+
+  return res
+end
+
+function expect_BP(op::String, ψ::AbstractITensorNetwork; expect_vertices=vertices(ψ))
+  ψψ = norm_network(ψ)
+  mts = belief_propagation(
+    ψψ,
+    message_tensors(ψψ; subgraph_vertices=collect(values(group(v -> v[1], vertices(ψψ)))));
+    contract_kwargs=(; alg="exact"),
+  )
+  return expect_BP(op, ψ, ψψ, mts; expect_vertices)
+end
+
+function expect_BP(
+  op::String,
+  ψ::AbstractITensorNetwork,
+  ψψ::AbstractITensorNetwork;
+  expect_vertices=vertices(ψ),
+)
+  mts = belief_propagation(
+    ψψ,
+    message_tensors(ψψ; subgraph_vertices=collect(values(group(v -> v[1], vertices(ψψ)))));
+    contract_kwargs=(; alg="exact"),
+  )
+  return expect_BP(op, ψ, ψψ, mts; expect_vertices)
 end

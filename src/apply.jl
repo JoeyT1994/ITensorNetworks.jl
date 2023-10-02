@@ -3,23 +3,40 @@ function sqrt_and_inv_sqrt(
   A::ITensor; ishermitian=false, cutoff=nothing, regularization=nothing
 )
   if isdiag(A)
-    A = map_diag(x -> x + regularization, A)
-    sqrtA = sgnpres_sqrt_diag(A)
-    inv_sqrtA = inv_diag(sqrtA)
+    A = ITensors.map_diag(x -> x + regularization, A)
+    sqrtA = ITensors.map_diag(sqrt ∘ abs, A)
+    inv_sqrtA = ITensors.map_diag(inv, sqrtA)
     return sqrtA, inv_sqrtA
   end
   @assert ishermitian
-  D, U = eigen(A; ishermitian, cutoff)
-  D = map_diag(x -> x + regularization, D)
+  if hasqns(A)
+    linds = filter(i -> dir(i) == ITensors.Out, inds(A))
+    rinds = filter(i -> dir(i) == ITensors.In, inds(A))
+    D, U = eigen(A, linds..., rinds...; ishermitian, cutoff)
+  else
+    D, U = eigen(A; ishermitian, cutoff)
+  end
+  D = ITensors.map_diag(x -> x + regularization, D)
 
-  sqrtD = sgnpres_sqrt_diag(D)
+  sqrtD = ITensors.map_diag(sqrt ∘ abs, D)
   # sqrtA = U * sqrtD * prime(dag(U))
   sqrtA = noprime(dag(sqrtD) * U)
 
-  inv_sqrtD = inv_diag(sqrtD)
+  inv_sqrtD = ITensors.map_diag(inv, sqrtD)
   # inv_sqrtA = U * inv_sqrtD * prime(dag(U))
   inv_sqrtA = noprime(inv_sqrtD * dag(U))
-  return dag(sqrtA), dag(inv_sqrtA)
+
+  δᵤᵥ = copy(D)
+  ITensors.map_diag!(v -> 1.0, δᵤᵥ, D)
+  sqrtA = noprime(dag(δᵤᵥ) * sqrtA)
+
+  A_ind = first(inds(A; plev=0))
+  sqrtA_ind = first(inds(sqrtA; id=id(A_ind)))
+  if dir(A_ind) == dir(sqrtA_ind)
+    return sqrtA, inv_sqrtA
+  else
+    return dag(sqrtA), dag(inv_sqrtA)
+  end
 end
 
 function full_update_bp(
@@ -71,7 +88,6 @@ function full_update_bp(
 end
 
 function simple_update_bp_full(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwargs...)
-
   if !isnothing(observer!)
     insert_function!(observer!, "singular_values" => (; singular_values) -> singular_values)
   end
@@ -88,7 +104,7 @@ function simple_update_bp_full(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwa
   inv_sqrt_envs_v1 = last.(sqrt_and_inv_sqrt_envs_v1)
   sqrt_envs_v2 = first.(sqrt_and_inv_sqrt_envs_v2)
   inv_sqrt_envs_v2 = last.(sqrt_and_inv_sqrt_envs_v2)
-  ψᵥ₁ᵥ₂_tn = [ψ[v⃗[1]]; ψ[v⃗[2]]; sqrt_envs_v1; sqrt_envs_v2]
+  ψᵥ₁ᵥ₂_tn = ITensor[ψ[v⃗[1]]; ψ[v⃗[2]]; sqrt_envs_v1; sqrt_envs_v2]
   ψᵥ₁ᵥ₂ = contract(ψᵥ₁ᵥ₂_tn; sequence=contraction_sequence(ψᵥ₁ᵥ₂_tn; alg="optimal"))
   oψ = apply(o, ψᵥ₁ᵥ₂)
   v1_inds = reduce(
@@ -102,10 +118,21 @@ function simple_update_bp_full(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwa
   e = v⃗[1] => v⃗[2]
 
   Sref = Ref{ITensor}()
-  ψᵥ₁, ψᵥ₂, spec = ITensors.factorize(oψ, v1_inds; which_decomp = "svd", (singular_values!)=Sref, leftdir = ITensors.Out, rightdir = ITensors.Out, lefttags=edge_tag(e), righttags=edge_tag(e), ortho = "none", apply_kwargs...)
+  ψᵥ₁, ψᵥ₂, spec = ITensors.factorize(
+    oψ,
+    v1_inds;
+    which_decomp="svd",
+    (singular_values!)=Sref,
+    lefttags=edge_tag(e),
+    righttags=edge_tag(e),
+    ortho="none",
+    apply_kwargs...,
+  )
+  noprime!(ψᵥ₁)
+  noprime!(ψᵥ₂)
   u = commonind(ψᵥ₁, ψᵥ₂)
   S = diagITensor(u', dag(u))
-  ITensors.map_diag!(v->v, S, Sref[])
+  ITensors.map_diag!(v -> v, S, Sref[])
   S /= norm(S)
   update!(observer!; singular_values=S)
 
@@ -127,7 +154,6 @@ end
 
 # Reduced version
 function simple_update_bp(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwargs...)
-
   if !isnothing(observer!)
     insert_function!(observer!, "singular_values" => (; singular_values) -> singular_values)
   end
@@ -160,10 +186,21 @@ function simple_update_bp(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwargs..
   e = v⃗[1] => v⃗[2]
 
   Sref = Ref{ITensor}()
-  Rᵥ₁, Rᵥ₂, spec = ITensors.factorize(oR, unioninds(rᵥ₁, sᵥ₁); which_decomp = "svd", (singular_values!)=Sref, leftdir = ITensors.Out, rightdir = ITensors.Out, lefttags=edge_tag(e), righttags=edge_tag(e), ortho = "none", apply_kwargs...)
+  Rᵥ₁, Rᵥ₂, spec = ITensors.factorize(
+    oR,
+    unioninds(rᵥ₁, sᵥ₁);
+    which_decomp="svd",
+    (singular_values!)=Sref,
+    lefttags=edge_tag(e),
+    righttags=edge_tag(e),
+    ortho="none",
+    apply_kwargs...,
+  )
+  noprime!(Rᵥ₁)
+  noprime!(Rᵥ₂)
   u = commonind(Rᵥ₁, Rᵥ₂)
   S = diagITensor(u', dag(u))
-  ITensors.map_diag!(v->v, S, Sref[])
+  ITensors.map_diag!(v -> v, S, Sref[])
   S /= norm(S)
   update!(observer!; singular_values=S)
 
@@ -172,7 +209,6 @@ function simple_update_bp(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwargs..
   Qᵥ₂ = contract([Qᵥ₂; inv_sqrt_envs_v2])
   ψᵥ₁ = Qᵥ₁ * Rᵥ₁
   ψᵥ₂ = Qᵥ₂ * Rᵥ₂
-
 
   noprime!(ψᵥ₁)
   noprime!(ψᵥ₂)
@@ -248,6 +284,46 @@ function ITensors.apply(
     error("Gates with more than 2 sites is not supported yet.")
   end
   return ψ
+end
+
+#BP Version
+function ITensors.apply(
+  o::ITensor,
+  ψ::AbstractITensorNetwork,
+  ψψ::AbstractITensorNetwork,
+  mts::DataGraph;
+  simple_BP=true,
+  apply_kwargs...,
+)
+  v⃗ = neighbor_vertices(ψ, o)
+  if length(v⃗) == 2
+    v1, v2 = v⃗
+    s1 = find_subgraph((v1, 1), mts)
+    s2 = find_subgraph((v2, 1), mts)
+    envs = get_environment(ψψ, mts, [(v1, 1), (v1, 2), (v2, 1), (v2, 2)])
+    obs = observer()
+    ψ = apply(o, ψ; envs, (observer!)=obs, normalize=true, apply_kwargs...)
+    S = only(obs.singular_values)
+    S /= norm(S)
+
+    # Update message tensor
+    ψψ = norm_network(ψ)
+    if simple_BP
+      mts = copy(mts)
+      mts[s1] = ITensorNetwork(dictionary([(v1, 1) => ψψ[v1, 1], (v1, 2) => ψψ[v1, 2]]))
+      mts[s2] = ITensorNetwork(dictionary([(v2, 1) => ψψ[v2, 1], (v2, 2) => ψψ[v2, 2]]))
+      mts[s1 => s2] = ITensorNetwork(dag.(denseblocks.(obs.singular_values)))
+      mts[s2 => s1] = ITensorNetwork(denseblocks.(obs.singular_values))
+    end
+  elseif length(v⃗) == 1
+    ψ = apply(o, ψ; apply_kwargs...)
+  elseif length(v⃗) < 1
+    error("Gate being applied does not share indices with tensor network.")
+  elseif length(v⃗) > 2
+    error("Gates with more than 2 sites is not supported yet.")
+  end
+
+  return ψ, ψψ, mts
 end
 
 function ITensors.apply(
@@ -355,13 +431,13 @@ function ITensors.apply(
 
     for vn in neighbors(ψ, src(e))
       if (vn != dst(e))
-        ψv1 = noprime(ψv1 * inv_diag(bond_tensors[vn => src(e)]))
+        ψv1 = noprime(ψv1 * ITensors.map_diag(inv, bond_tensors[vn => src(e)]))
       end
     end
 
     for vn in neighbors(ψ, dst(e))
       if (vn != src(e))
-        ψv2 = noprime(ψv2 * inv_diag(bond_tensors[vn => dst(e)]))
+        ψv2 = noprime(ψv2 * ITensors.map_diag(inv, bond_tensors[vn => dst(e)]))
       end
     end
 
