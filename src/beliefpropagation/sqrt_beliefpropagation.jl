@@ -95,10 +95,10 @@ function sqrt_message_tensors(
     Y_D, Y_U = eigen(
       contract(ITensor(mts[s2 => s1])); ishermitian=true, cutoff=eigen_message_tensor_cutoff
     )
-    X_D, Y_D = map_diag(x -> x + regularization, X_D),
-    map_diag(x -> x + regularization, Y_D)
+    X_D, Y_D = ITensors.map_diag(x -> x + regularization, X_D),
+    ITensors.map_diag(x -> x + regularization, Y_D)
 
-    rootX_D, rootY_D = sqrt_diag(X_D), sqrt_diag(Y_D)
+    rootX_D, rootY_D = ITensors.map_diag(sqrt, X_D), ITensors.map_diag(sqrt, Y_D)
     rootX = X_U * rootX_D * prime(dag(X_U))
     rootY = Y_U * rootY_D * prime(dag(Y_U))
 
