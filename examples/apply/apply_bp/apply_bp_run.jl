@@ -10,7 +10,7 @@ graph = named_grid
 
 dims = (6, 6)
 
-ψ_bp, mts_bp, ψ_vidal, mts_vidal = main(;
+ψ_bp, ψψ_bp, mts_bp, ψ_vidal, mts_vidal = main(;
   seed=1234,
   opname,
   graph,
@@ -24,8 +24,14 @@ dims = (6, 6)
 
 v = dims .÷ 2
 
-sz_bp = @show expect_bp("Sz", v, ψ_bp, mts_bp)
-sz_vidal = @show expect_bp("Sz", v, ψ_vidal, mts_vidal)
+sz_bp = @show first(
+  collect(values(expect_BP("Sz", ψ_bp, ψψ_bp, mts_bp; expect_vertices=[v])))
+)
+sz_vidal = @show first(
+  collect(
+    values(expect_BP("Sz", ψ_vidal, norm_network(ψ_vidal), mts_vidal; expect_vertices=[v]))
+  ),
+)
 @show abs(sz_bp - sz_vidal) / abs(sz_vidal)
 
 # Run BP again
@@ -44,8 +50,14 @@ mts_vidal = belief_propagation(
   target_precision=1e-5,
 )
 
-sz_bp = @show expect_bp("Sz", v, ψ_bp, mts_bp)
-sz_vidal = @show expect_bp("Sz", v, ψ_vidal, mts_vidal)
+sz_bp = @show first(
+  collect(values(expect_BP("Sz", ψ_bp, ψψ_bp, mts_bp; expect_vertices=[v])))
+)
+sz_vidal = @show first(
+  collect(
+    values(expect_BP("Sz", ψ_vidal, norm_network(ψ_vidal), mts_vidal; expect_vertices=[v]))
+  ),
+)
 @show abs(sz_bp - sz_vidal) / abs(sz_vidal)
 
 ψ_symmetric, _ = symmetric_gauge(ψ_bp)

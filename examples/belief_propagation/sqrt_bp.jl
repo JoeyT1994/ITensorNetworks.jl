@@ -38,16 +38,7 @@ function main(; n, niters, network="ising", β=nothing, h=nothing, χ=nothing)
   )
 
   mts = @time belief_propagation(ψψ, mts; niters, contract_kwargs=(; alg="exact"))
-  numerator_network = approx_network_region(
-    ψψ, mts, [(v, 1)]; verts_tn=ITensorNetwork([apply(op("Sz", s[v]), ψ[v])])
-  )
-  denominator_network = approx_network_region(ψψ, mts, [(v, 1)])
-  sz_bp =
-    contract(
-      numerator_network; sequence=contraction_sequence(numerator_network; alg="optimal")
-    )[] / contract(
-      denominator_network; sequence=contraction_sequence(denominator_network; alg="optimal")
-    )[]
+  sz_bp = first(collect(values(expect_BP("Sz", ψ, ψψ, mts; expec_vertices=[v]))))
 
   println(
     "Simple Belief Propagation Gives Sz on Site " * string(v) * " as " * string(sz_bp)
@@ -58,17 +49,7 @@ function main(; n, niters, network="ising", β=nothing, h=nothing, χ=nothing)
   )
 
   mts_sqrt = @time sqrt_belief_propagation(ψ, mts_sqrt; niters)
-
-  numerator_network = approx_network_region(
-    ψψ, mts_sqrt, [(v, 1)]; verts_tn=ITensorNetwork([apply(op("Sz", s[v]), ψ[v])])
-  )
-  denominator_network = approx_network_region(ψψ, mts_sqrt, [(v, 1)])
-  sz_sqrt_bp =
-    contract(
-      numerator_network; sequence=contraction_sequence(numerator_network; alg="optimal")
-    )[] / contract(
-      denominator_network; sequence=contraction_sequence(denominator_network; alg="optimal")
-    )[]
+  sz_sqrt_bp = first(collect(values(expect_BP("Sz", ψ, ψψ, mts_sqrt; expec_vertices=[v]))))
 
   println(
     "Sqrt Belief Propagation Gives Sz on Site " * string(v) * " as " * string(sz_sqrt_bp)

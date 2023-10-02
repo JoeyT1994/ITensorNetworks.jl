@@ -35,11 +35,7 @@ function main()
   )
 
   mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
-  numerator_network = approx_network_region(
-    ψψ, mts, [(v, 1)]; verts_tn=ITensorNetwork([apply(op("Sz", s[v]), ψ[v])])
-  )
-  denominator_network = approx_network_region(ψψ, mts, [(v, 1)])
-  sz_bp = contract(numerator_network)[] / contract(denominator_network)[]
+  sz_bp = first(collect(values(expect_BP("Sz", ψ, ψψ, mts; expec_vertices=[v]))))
 
   println(
     "Simple Belief Propagation Gives Sz on Site " * string(v) * " as " * string(sz_bp)
@@ -53,11 +49,7 @@ function main()
   Zpp = partition(ψψ; subgraph_vertices=nested_graph_leaf_vertices(Zp))
   mts = message_tensors(Zpp)
   mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
-  numerator_network = approx_network_region(
-    ψψ, mts, [(v, 1)]; verts_tn=ITensorNetwork([apply(op("Sz", s[v]), ψ[v])])
-  )
-  denominator_network = approx_network_region(ψψ, mts, [(v, 1)])
-  sz_bp = contract(numerator_network)[] / contract(denominator_network)[]
+  sz_bp = first(collect(values(expect_BP("Sz", ψ, ψψ, mts; expec_vertices=[v]))))
 
   println(
     "General Belief Propagation (4-site subgraphs) Gives Sz on Site " *
@@ -93,7 +85,9 @@ function main()
 
   numerator_network = approx_network_region(ψψ, mts, [v]; verts_tn=ITensorNetwork(ψOψ[v]))
   denominator_network = approx_network_region(ψψ, mts, [v])
-  sz_bp = contract(numerator_network)[] / contract(denominator_network)[]
+  sz_bp =
+    ITensorNetworks.contract(numerator_network)[] /
+    ITensorNetworks.contract(denominator_network)[]
 
   println(
     "General Belief Propagation with Column Partitioning and MPS Message Tensors (Max dim 8) Gives Sz on Site " *
@@ -103,7 +97,7 @@ function main()
   )
 
   #Now do it exactly
-  sz_exact = contract(ψOψ)[] / contract(ψψ)[]
+  sz_exact = ITensorNetworks.contract(ψOψ)[] / ITensorNetworks.contract(ψψ)[]
 
   return println("The exact value of Sz on Site " * string(v) * " is " * string(sz_exact))
 end
