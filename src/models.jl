@@ -65,6 +65,20 @@ function ising(g::AbstractGraph; J1=-1.0, J2=0.0, h::Union{<:Real,Vector{<:Real}
   return ℋ
 end
 
+function spinless_fermions(g::AbstractGraph; t=-1.0, U=0.0)
+  ℋ = OpSum()
+  for e in edges(g)
+    if !iszero(t)
+      ℋ += t, "Cdag", maybe_only(src(e)), "C", maybe_only(dst(e))
+      ℋ -= t, "C", maybe_only(src(e)), "Cdag", maybe_only(dst(e))
+    end
+    if !iszero(U)
+      ℋ += U, "N", maybe_only(src(e)), "N", maybe_only(dst(e))
+    end
+  end
+  return ℋ
+end
+
 """
 Random field J1-J2 Heisenberg model on a chain of length N
 """
