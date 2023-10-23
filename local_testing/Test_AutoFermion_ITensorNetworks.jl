@@ -10,7 +10,6 @@ using ITensorNetworks:
   belief_propagation,
   symmetric_to_vidal_gauge,
   approx_network_region,
-  full_update_bp,
   get_environment,
   sqrt_and_inv_sqrt,
   find_subgraph,
@@ -19,7 +18,8 @@ using ITensorNetworks:
   setindex_preserve_graph!,
   group_commuting_itensors,
   simple_update_bp_full,
-  simple_update_bp
+  simple_update_bp,
+  expect_BP
 using ITensors: map_diag!, map_diag
 using Dictionaries
 using Observers
@@ -119,65 +119,6 @@ function evolve_su(ψ::ITensorNetwork, gate::ITensor; svd_kwargs...)
   return ψ
 end
 
-function evolve_fu(
-  ψ::ITensorNetwork, gate::ITensor, mts::DataGraph, ψψ::ITensorNetwork; apply_kwargs...
-)
-  ψ = copy(ψ)
-  v⃗ = neighbor_vertices(ψ, gate)
-  e_ind = only(commoninds(ψ[v⃗[1]], ψ[v⃗[2]]))
-
-  @assert length(v⃗) == 2
-  v1, v2 = v⃗
-
-  s1 = find_subgraph((v1, 1), mts)
-  s2 = find_subgraph((v2, 1), mts)
-
-  envs = get_environment(ψψ, mts, [(v1, 1), (v1, 2), (v2, 1), (v2, 2)])
-  envs = Vector{ITensor}(envs)
-
-  obs = Observer()
-  ψᵥ₁, ψᵥ₂ = simple_update_bp(gate, ψ, v⃗; envs, (observer!)=obs, apply_kwargs...)
-
-  S = only(obs.singular_values)
-
-  ψᵥ₁ ./= norm(ψᵥ₁)
-  ψᵥ₂ ./= norm(ψᵥ₂)
-
-  ψ[v1], ψ[v2] = ψᵥ₁, ψᵥ₂
-
-  ψψ = norm_network(ψ)
-  mts[s1] = ITensorNetwork{vertextype(mts[s1])}(
-    dictionary([(v1, 1) => ψψ[v1, 1], (v1, 2) => ψψ[v1, 2]])
-  )
-  mts[s2] = ITensorNetwork{vertextype(mts[s2])}(
-    dictionary([(v2, 1) => ψψ[v2, 1], (v2, 2) => ψψ[v2, 2]])
-  )
-  mts[s1 => s2] = ITensorNetwork(dag(S))
-  mts[s2 => s1] = ITensorNetwork(S)
-
-  return ψ, ψψ, mts
-end
-
-"""Take the expectation value of a an ITensor on an ITN using SBP"""
-function expect_state_SBP(
-  o::ITensor, ψ::AbstractITensorNetwork, ψψ::AbstractITensorNetwork, mts::DataGraph
-)
-  Oψ = apply(o, ψ; cutoff=1e-16)
-  ψ = copy(ψ)
-  s = siteinds(ψ)
-  vs = vertices(s)[findall(i -> (length(commoninds(s[i], inds(o))) != 0), vertices(s))]
-  vs_braket = [(v, 1) for v in vs]
-
-  numerator_network = approx_network_region(
-    ψψ, mts, vs_braket; verts_tn=ITensorNetwork(ITensor[Oψ[v] for v in vs])
-  )
-  denominator_network = approx_network_region(ψψ, mts, vs_braket)
-  num_seq = contraction_sequence(numerator_network; alg="optimal")
-  den_seq = contraction_sequence(numerator_network; alg="optimal")
-  return ITensorNetworks.contract(numerator_network; sequence=num_seq)[] /
-         ITensorNetworks.contract(denominator_network; sequence=den_seq)[]
-end
-
 function exact_dynamics_hopping_fermionic_model(
   A::Matrix, cidag_cj_init::Matrix, t::Float64
 )
@@ -241,16 +182,20 @@ function main(χ::Int64, lattice::String)
   @show χ, lattice
 
   if lattice == "Chain"
-    n = 4
+    n = 2
     g = named_grid((n, 1))
   elseif lattice == "ChainPBC"
-    n = 12
+    n = 6
     g = named_grid((n, 1))
     add_edge!(g, (1, 1) => (n, 1))
   elseif lattice == "Hexagonal"
     g = NamedGraphs.hexagonal_lattice_graph(4, 4)
   elseif lattice == "HeavyHexagonal"
     g = NamedGraphs.hexagonal_lattice_graph(4, 4)
+    g = decorate_graph_edges(g)
+  elseif lattice == "Lieb"
+    n = 4
+    g = NamedGraphs.named_grid((n, n))
     g = decorate_graph_edges(g)
   elseif lattice == "2DSquare"
     n = 4
@@ -277,6 +222,7 @@ function main(χ::Int64, lattice::String)
   dt = 0.05
   dbetas = [-dt for i in 1:no_sweeps]
   t_final = -sum(dbetas)
+
   ψ = ITensorNetwork(s, v -> findfirst(==(v), g_vs) % 2 == 0 ? "Occ" : "Emp")
 
   ψψ = ψ ⊗ prime(dag(ψ); sites=[])
@@ -287,7 +233,7 @@ function main(χ::Int64, lattice::String)
   )
   mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
 
-  init_occs = [expect_state_SBP(op("N", s[v]), ψ, ψψ, mts) for v in g_vs]
+  init_occs = collect(values(real.(expect_BP("N", ψ, ψψ, mts; vertices=g_vs))))
   @show init_occs
   cidag_cj_init = Matrix(Diagonal(init_occs))
 
@@ -303,42 +249,36 @@ function main(χ::Int64, lattice::String)
 
   seq = nothing
   for i in 1:no_sweeps
-    println("On Sweep $i")
+    #println("On Sweep $i")
     gates = Hubbard_gates(
       s, U; dbeta=dbetas[i], imaginary_time=false, real_time=true, reverse_gates=true
     )
-    for gate in gates
-      #ψ, bond_tensors = apply_vidal_fermion(gate, ψ, bond_tensors)
-      ψ, ψψ, mts = evolve_fu(ψ, gate, mts, ψψ; maxdim=χ, cutofff=1e-12)
+    for (j, gate) in enumerate(gates)
+      ψ, ψψ, mts = apply(gate, ψ, ψψ, mts; maxdim=χ, cutofff=1e-12, simple_BP=true)
       if state_vector_backend
         ψ_sv = noprime(ψ_sv * gate)
       end
-      #mts, ψψ =  fermion_bp(ψ)
-      #ψ = evolve_fu(ψ, gate; maxdim = χ, cutofff = 1e-6)
     end
 
     if re_gauge
       mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters=25)
-      occs[i + 1, :] = real.([expect_state_SBP(op("N", s[v]), ψ, ψψ, mts) for v in g_vs])
+      occs[i + 1, :] = collect(values(real.(expect_BP("N", ψ, ψψ, mts; vertices=g_vs))))
     else
       mts_temp = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters=25)
       occs[i + 1, :] =
-        real.([expect_state_SBP(op("N", s[v]), ψ, ψψ, mts_temp) for v in g_vs])
+        collect(values(real.(expect_BP("N", ψ, ψψ, mts_temp; vertices=g_vs))))
     end
     cidag_cj = exact_dynamics_hopping_fermionic_model(A, cidag_cj_init, i * dt)
     occs_exact[i + 1, :] = real.(diag(cidag_cj))
 
-    #ψ, ψψ, mts = re_gauge(ψ, ψψ, mts, s, χ; niters = 5)
     #E, seq = calc_energy(s, ψ; seq, U)
     #println("Current Energy $E")
   end
 
-  #ψ, _ = vidal_to_symmetric_gauge(ψ, bond_tensors)
-  #mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters = 50)
-
   #occs[no_sweeps + 1, :] =  real.([expect_state_SBP(op("N", s[v]), ψ, ψψ, mts) for v in vertices(g)])
 
   @show mean(abs.(occs[no_sweeps + 1, :] - occs_exact[no_sweeps + 1, :]))
+  @show occs_exact[no_sweeps + 1, :]
 
   if state_vector_backend
     final_occs_state_vec = [exact_state_vector(ψ_sv, op("N", s[v])) for v in g_vs]
@@ -370,7 +310,7 @@ function main(χ::Int64, lattice::String)
 end
 
 χs = [[24]]
-lattices = ["CombTree"]
+lattices = ["Chain"]
 for (i, lattice) in enumerate(lattices)
   for (j, χ) in enumerate(flatten(χs[i, :]))
     main(χ, lattice)

@@ -55,47 +55,63 @@ function expect(
 end
 
 function expect_BP(
+  op::Vector{String},
+  ψ::AbstractITensorNetwork,
+  ψψ::AbstractITensorNetwork,
+  mts::DataGraph,
+  vertex_set;
+  sequence = nothing)
+
+  s = siteinds(ψ)
+  @assert length(vertex_set) == length(op)
+  numerator_network = approx_network_region(
+      ψψ, mts, [(v, 1) for v in vertex_set]; verts_tn=ITensorNetwork(ITensor[apply(ITensor(Op(op[i], v), s), ψ[v]) for (i, v) in enumerate(vertex_set)])
+    )
+  denominator_network = approx_network_region(ψψ, mts, [(v, 1) for v in vertex_set])
+
+  if isnothing(sequence)
+    sequence = contraction_sequence(numerator_network)
+  end
+
+  return contract(numerator_network; sequence)[] / contract(denominator_network; sequence)[]
+end
+
+function expect_BP(
   op::String,
   ψ::AbstractITensorNetwork,
   ψψ::AbstractITensorNetwork,
   mts::DataGraph;
-  expect_vertices=vertices(ψ),
+  vertices=Graphs.vertices(ψ),
 )
-  s = siteinds(ψ)
   ElT = promote_itensor_eltype(ψ)
-  res = Dictionary(expect_vertices, Vector{ElT}(undef, length(expect_vertices)))
-  for v in expect_vertices
-    O = ITensor(Op(op, v), s)
-    numerator_network = approx_network_region(
-      ψψ, mts, [(v, 1)]; verts_tn=ITensorNetwork(ITensor[apply(O, ψ[v])])
-    )
-    denominator_network = approx_network_region(ψψ, mts, [(v, 1)])
-    res[v] = contract(numerator_network)[] / contract(denominator_network)[]
+  res = Dictionary(vertices, Vector{ElT}(undef, length(vertices)))
+  for v in vertices
+    res[v] = expect_BP(String[op], ψ, ψψ, mts, [v])
   end
 
   return res
 end
 
-function expect_BP(op::String, ψ::AbstractITensorNetwork; expect_vertices=vertices(ψ))
+function expect_BP(op::String, ψ::AbstractITensorNetwork; vertices=Graphs.vertices(ψ))
   ψψ = norm_network(ψ)
   mts = belief_propagation(
     ψψ,
-    message_tensors(ψψ; subgraph_vertices=collect(values(group(v -> v[1], vertices(ψψ)))));
+    message_tensors(ψψ; subgraph_vertices=collect(values(group(v -> v[1], Graphs.vertices(ψψ)))));
     contract_kwargs=(; alg="exact"),
   )
-  return expect_BP(op, ψ, ψψ, mts; expect_vertices)
+  return expect_BP(op, ψ, ψψ, mts; vertices)
 end
 
 function expect_BP(
   op::String,
   ψ::AbstractITensorNetwork,
   ψψ::AbstractITensorNetwork;
-  expect_vertices=vertices(ψ),
+  vertices=Graphs.vertices(ψ),
 )
   mts = belief_propagation(
     ψψ,
-    message_tensors(ψψ; subgraph_vertices=collect(values(group(v -> v[1], vertices(ψψ)))));
+    message_tensors(ψψ; subgraph_vertices=collect(values(group(v -> v[1], Graphs.vertices(ψψ)))));
     contract_kwargs=(; alg="exact"),
   )
-  return expect_BP(op, ψ, ψψ, mts; expect_vertices)
+  return expect_BP(op, ψ, ψψ, mts; vertices)
 end

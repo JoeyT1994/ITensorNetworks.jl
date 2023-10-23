@@ -10,7 +10,6 @@ using ITensorNetworks:
   belief_propagation,
   symmetric_to_vidal_gauge,
   approx_network_region,
-  full_update_bp,
   get_environment,
   find_subgraph,
   diagblocks,

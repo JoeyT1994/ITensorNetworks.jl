@@ -39,7 +39,7 @@ function sqrt_and_inv_sqrt(
   end
 end
 
-function full_update_bp(
+function full_update(
   o,
   ψ,
   v⃗;
@@ -123,8 +123,7 @@ function simple_update_bp_full(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwa
     v1_inds;
     which_decomp="svd",
     (singular_values!)=Sref,
-    lefttags=edge_tag(e),
-    righttags=edge_tag(e),
+    tags=edge_tag(e),
     ortho="none",
     apply_kwargs...,
   )
@@ -191,8 +190,7 @@ function simple_update_bp(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwargs..
     unioninds(rᵥ₁, sᵥ₁);
     which_decomp="svd",
     (singular_values!)=Sref,
-    lefttags=edge_tag(e),
-    righttags=edge_tag(e),
+    tags=edge_tag(e),
     ortho="none",
     apply_kwargs...,
   )
@@ -253,7 +251,7 @@ function ITensors.apply(
       ψ = orthogonalize(ψ, v⃗[1])
     end
     if variational_optimization_only || !is_product_env
-      ψᵥ₁, ψᵥ₂ = full_update_bp(
+      ψᵥ₁, ψᵥ₂ = full_update(
         o,
         ψ,
         v⃗;
@@ -310,8 +308,8 @@ function ITensors.apply(
     ψψ = norm_network(ψ)
     if simple_BP
       mts = copy(mts)
-      mts[s1] = ITensorNetwork(dictionary([(v1, 1) => ψψ[v1, 1], (v1, 2) => ψψ[v1, 2]]))
-      mts[s2] = ITensorNetwork(dictionary([(v2, 1) => ψψ[v2, 1], (v2, 2) => ψψ[v2, 2]]))
+      mts[s1] = ITensorNetwork{vertextype(mts[s1])}(dictionary([(v1, 1) => ψψ[v1, 1], (v1, 2) => ψψ[v1, 2]]))
+      mts[s2] = ITensorNetwork{vertextype(mts[s2])}(dictionary([(v2, 1) => ψψ[v2, 1], (v2, 2) => ψψ[v2, 2]]))
       mts[s1 => s2] = ITensorNetwork(dag.(denseblocks.(obs.singular_values)))
       mts[s2 => s1] = ITensorNetwork(denseblocks.(obs.singular_values))
     end

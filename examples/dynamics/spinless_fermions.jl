@@ -10,7 +10,6 @@ using ITensorNetworks:
   belief_propagation,
   symmetric_to_vidal_gauge,
   approx_network_region,
-  full_update_bp,
   get_environment,
   find_subgraph,
   diagblocks,
@@ -111,7 +110,7 @@ function main(g::NamedGraph, χ::Int64, time_steps::Vector{Float64})
     itensor_constructor=denseblocks ∘ delta,
   )
   mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
-  init_occs = real.(expect_BP("N", ψ, ψψ, mts; expect_vertices=g_vs))
+  init_occs = real.(expect_BP("N", ψ, ψψ, mts; vertices=g_vs))
   cidag_cj_init = Matrix(Diagonal(collect(values(init_occs))))
 
   time = 0
@@ -130,7 +129,7 @@ function main(g::NamedGraph, χ::Int64, time_steps::Vector{Float64})
     mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters=25)
   end
 
-  final_occs = real.(expect_BP("N", ψ, ψψ, mts; expect_vertices=g_vs))
+  final_occs = real.(expect_BP("N", ψ, ψψ, mts; vertices=g_vs))
   cidag_cj = exact_dynamics_hopping_fermionic_model(A, cidag_cj_init, time)
   final_occs_exact = real.(diag(cidag_cj))
 

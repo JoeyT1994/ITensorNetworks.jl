@@ -35,7 +35,7 @@ function main()
   )
 
   mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
-  sz_bp = first(collect(values(expect_BP("Sz", ψ, ψψ, mts; expec_vertices=[v]))))
+  sz_bp = first(collect(values(expect_BP("Sz", ψ, ψψ, mts; vertices=[v]))))
 
   println(
     "Simple Belief Propagation Gives Sz on Site " * string(v) * " as " * string(sz_bp)
@@ -49,7 +49,7 @@ function main()
   Zpp = partition(ψψ; subgraph_vertices=nested_graph_leaf_vertices(Zp))
   mts = message_tensors(Zpp)
   mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
-  sz_bp = first(collect(values(expect_BP("Sz", ψ, ψψ, mts; expec_vertices=[v]))))
+  sz_bp = first(collect(values(expect_BP("Sz", ψ, ψψ, mts; vertices=[v]))))
 
   println(
     "General Belief Propagation (4-site subgraphs) Gives Sz on Site " *
