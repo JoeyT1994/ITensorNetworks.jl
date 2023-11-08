@@ -388,8 +388,13 @@ function ITensors.apply(
   ψ::AbstractITensorNetwork,
   bond_tensors::DataGraph;
   normalize=false,
+  (observer!) = nothing,
   apply_kwargs...,
 )
+
+  if !isnothing(observer!)
+    insert_function!(observer!, "truncerr" => (; truncerr) -> truncerr)
+  end
   ψ = copy(ψ)
   bond_tensors = copy(bond_tensors)
   v⃗ = _gate_vertices(o, ψ)
@@ -412,13 +417,15 @@ function ITensors.apply(
 
     Qᵥ₁, Rᵥ₁, Qᵥ₂, Rᵥ₂, theta = _contract_gate(o, ψv1, bond_tensors[e], ψv2)
 
-    U, S, V = ITensors.svd(
+    U, S, V, spec = ITensors.svd(
       theta,
       uniqueinds(Rᵥ₁, Rᵥ₂);
       lefttags=ITensorNetworks.edge_tag(e),
       righttags=ITensorNetworks.edge_tag(e),
       apply_kwargs...,
     )
+
+    update!(observer!; truncerr = spec.truncerr[])
 
     ind_to_replace = commonind(V, S)
     ind_to_replace_with = commonind(U, S)
