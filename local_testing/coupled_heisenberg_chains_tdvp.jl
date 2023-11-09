@@ -185,35 +185,32 @@ else
 end
 
 time_steps = [0.1 for i in 1:100]
-Jperps = [0.01*i for i in 1:20]
 
-for Jperp in Jperps
-  @show χ, Jperp
-  flush(stdout)
-  Q1s, Q2s, Q3s, times = main(
-    nx, ny, χ, time_steps, Jperp
+@show χ, Jperp
+flush(stdout)
+Q1s, Q2s, Q3s, times = main(
+  nx, ny, χ, time_steps, Jperp
+)
+
+save = true
+if save
+  file_str =
+    "/mnt/home/jtindall/Documents/Data/ITensorNetworks/CoupledHeisenberg/TDVPChi" *
+    string(χ) *
+    "Nx" *
+    string(nx) *
+    "Ny" *
+    string(ny) *
+    "JPerp" *
+    string(round(Jperp; digits=3)) *
+    "Tmax" *
+    string(round(sum(time_steps); digits=3))
+  file_str *= ".npz"
+  npzwrite(
+    file_str;
+    Q1s=Q1s,
+    Q2s=Q2s,
+    Q3s=Q3s,
+    times=times,
   )
-
-  save = true
-  if save
-    file_str =
-      "/mnt/home/jtindall/Documents/Data/ITensorNetworks/CoupledHeisenberg/TDVPChi" *
-      string(χ) *
-      "Nx" *
-      string(nx) *
-      "Ny" *
-      string(ny) *
-      "JPerp" *
-      string(round(Jperp; digits=3)) *
-      "Tmax" *
-      string(round(sum(time_steps); digits=3))
-    file_str *= ".npz"
-    npzwrite(
-      file_str;
-      Q1s=Q1s,
-      Q2s=Q2s,
-      Q3s=Q3s,
-      times=times,
-    )
-  end
 end

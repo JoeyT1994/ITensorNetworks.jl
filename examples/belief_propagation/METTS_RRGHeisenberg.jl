@@ -132,13 +132,14 @@ function main(;
   z::Int64=3,
   nverts::Int64=10,
   W::Float64=1.0,
-  dβ::Float64=0.025,
+  dβ::Float64=0.1,
   T::Float64=1.0,
   nMETTS::Int64=10,
   nwarmupMETTS::Int64=10,
   id::Int64=1,
   save=true,
 )
+  Random.seed!(1234 * id)
   β = 1.0 / T
   g = NamedGraph(Graphs.random_regular_graph(nverts, z))
   s = siteinds("S=1/2", g)
@@ -149,7 +150,6 @@ function main(;
   zmags = zeros((nMETTS + nwarmupMETTS, length(vertices(g))))
   errs = zeros((nMETTS + nwarmupMETTS))
   projs = ["Z+", "X+", "Y+", "Z-", "X-", "Y-"]
-  Random.seed!(1234 * id)
 
   gates = heisenberg(
     g; hx=W .* randn((nverts)), hy=W .* randn((nverts)), hz=W .* randn((nverts))
@@ -170,7 +170,9 @@ function main(;
       for u in u⃗
         obs = Observer()
         ψ, bond_tensors = apply(u, ψ, bond_tensors; (observer!) = obs, normalize=true, maxdim=χ, cutoff=1e-12)
-        e *= (1.0 - obs.truncerr[])
+        if !isempty(obs.truncerr)
+          e *= (1.0 - first(only(obs.truncerr)))
+        end
       end
 
       cur_C = vidal_itn_canonicalness(ψ, bond_tensors)
@@ -244,7 +246,7 @@ if length(ARGS) > 1
   id = parse(Int64, ARGS[8])
   save = true
 else
-  χ, z, nverts, T, W, id, nMETTS, nwarmupMETTS = 16, 3, 150, 1.0, 0.0, 1, 0, 1
+  χ, z, nverts, T, W, id, nMETTS, nwarmupMETTS = 6, 3, 250, 0.25, 0.0, 1, 0, 1
   save = false
 end
 

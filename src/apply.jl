@@ -424,8 +424,7 @@ function ITensors.apply(
       righttags=ITensorNetworks.edge_tag(e),
       apply_kwargs...,
     )
-
-    update!(observer!; truncerr = spec.truncerr[])
+    update!(observer!; truncerr = spec.truncerr)
 
     ind_to_replace = commonind(V, S)
     ind_to_replace_with = commonind(U, S)
