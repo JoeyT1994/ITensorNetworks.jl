@@ -17,11 +17,14 @@ using OMEinsumContractionOrders
 using ITensorTDVP
 
 function general_expect(ψ::MPS, Os::Vector{String}, sites::Vector{Int64}, s)
-  ψO = copy(ψ)
   ψ = copy(ψ)
-  for (i, O) in enumerate(Os)
-    ψO[sites[i]] = noprime(ψO[sites[i]] * ITensors.op(O, s[sites[i]]))
+  orthogonalize!(ψ, first(sites))
+  O = 1.0
+  for i in 1:length(Os)
+    O *= op(Os[i], s[sites[i]])
   end
+  
+  ψO = apply(O, ψ)
 
   return inner(ψ, ψO)
 end
@@ -39,8 +42,8 @@ function calculate_Q2(nx::Int64, ny::Int64,
   ]
 
   for v_set in vertex_sets
+    site_set = [reverse_vertex_map[v] for v in v_set]
     for string in strings
-      site_set = [reverse_vertex_map[v] for v in v_set]
       out +=general_expect(ψ, string, site_set, s)
     end
   end
@@ -62,14 +65,13 @@ function calculate_Q3(nx::Int64, ny::Int64,
   vertex_sets = [[(j, mod(i, nx) + 1), (j, mod(i + 1, nx) + 1), (j, mod(i + 2, nx) + 1)] for i in nx_iter for j in ny_iter]
 
   for v_set in vertex_sets
+    site_set = [reverse_vertex_map[v] for v in v_set]
     for string in pos_strings
-      site_set = [reverse_vertex_map[v] for v in v_set]
-      out +=general_expect(ψ, string, site_set, s)
+      out += general_expect(ψ, string, site_set, s)
     end
 
     for string in neg_strings
-      site_set = [reverse_vertex_map[v] for v in v_set]
-      out -=general_expect(ψ, string, site_set, s)
+      out += -1.0*general_expect(ψ, string, site_set, s)
     end
   end
 
@@ -78,22 +80,18 @@ function calculate_Q3(nx::Int64, ny::Int64,
   return out / (length(nx_iter) * length(ny_iter))
 end
 
-function HSpin(adj_mat, params, sites)
+function HSpin(adj_mat, sites)
   ampo = OpSum()
   @assert size(adj_mat)[1] == size(adj_mat)[2]
   L = size(adj_mat)[1]
   for i in 1:L
     for j in (i + 1):L
-      ampo += adj_mat[i, j] * params["Jx"], "Sx", i, "Sx", j
-      ampo += adj_mat[i, j] * params["Jy"], "Sy", i, "Sy", j
-      ampo += adj_mat[i, j] * params["Jz"], "Sz", i, "Sz", j
+      if !iszero(adj_mat[i, j])
+        ampo += 0.5*adj_mat[i, j], "S+", i, "S-", j
+        ampo += 0.5*adj_mat[i, j], "S-", i, "S+", j
+        ampo += adj_mat[i, j], "Sz", i, "Sz", j
+      end
     end
-  end
-
-  for i in 1:L
-    ampo += 2 * params["hx"], "Sx", i
-    ampo += 2 * params["hy"], "Sy", i
-    ampo += 2 * params["hz"], "Sz", i
   end
 
   H = MPO(ampo, sites)
@@ -139,21 +137,20 @@ function main(
   reverse_vertex_map = snake_up ? Dict(zip([(i, j) for j in 1:nx for i in 1:ny], [i for i in 1:nx*ny])) : Dict(zip([(i, j) for i in 1:ny for j in 1:nx], [i for i in 1:nx*ny]))
   adj_mat = get_adj_mat(g, vertex_map; Jperp)
   ψ_t = MPS(ComplexF64, s, [(vertex_map[i][2] + 2) % 3 == 0 ? "X+" : (vertex_map[i][2] + 2) % 3 == 1 ? "Y+" : "Z+" for i in 1:nx*ny])
-  params = Dict(zip(["Jx", "Jy", "Jz", "hx", "hy", "hz"], [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]))
-  H = HSpin(adj_mat, params, s)
+  H = HSpin(adj_mat, s)
   
   time = 0
   Q1s = zeros((length(time_steps) + 1))
   Q2s = zeros((length(time_steps) + 1))
   Q3s = zeros((length(time_steps) + 1))
-  Q3s[1] = real(calculate_Q3(nx, ny, ψ_t, reverse_vertex_map, s))
-  Q2s[1] = real(calculate_Q2(nx, ny, ψ_t, reverse_vertex_map, s))
   Q1s[1] = mean(ITensors.expect(ψ_t, "Z"))
+  Q2s[1] = real(calculate_Q2(nx, ny, ψ_t, reverse_vertex_map, s))
+  Q3s[1] = real(calculate_Q3(nx, ny, ψ_t, reverse_vertex_map, s))
   times = vcat([0.0], cumsum(time_steps))
 
   for (i, dt) in enumerate(time_steps)
     @show time
-    ψ_t = ITensorTDVP.tdvp(H,-im * dt,ψ_t;time_step=-im * dt,normalize=true,maxdim=χ,cutoff=1e-12,outputlevel=1)
+    ψ_t = ITensorTDVP.tdvp(H,-im * dt,ψ_t;time_step=-im * dt,normalize=true,maxdim=χ, cutoff = 1e-16, outputlevel=1)
     Q1s[i + 1] = mean(ITensors.expect(ψ_t, "Z"))
     Q2s[i + 1] = real(calculate_Q2(nx, ny, ψ_t, reverse_vertex_map, s))
     Q3s[i + 1] = real(calculate_Q3(nx, ny, ψ_t, reverse_vertex_map, s))
@@ -177,14 +174,17 @@ if length(ARGS) > 1
   ny = parse(Int64, ARGS[2])
   χ = parse(Int64, ARGS[3])
   Jperp = parse(Float64, ARGS[4])
+  nsteps = 1000
   save = true
 else
   nx, ny = 36, 2
-  Jperp = 0.05
+  Jperp = 0.0
   χ = 64
+  save = false
+  nsteps = 100
 end
 
-time_steps = [0.1 for i in 1:100]
+time_steps = [0.01 for i in 1:nsteps]
 
 @show χ, Jperp
 flush(stdout)
@@ -192,7 +192,6 @@ Q1s, Q2s, Q3s, times = main(
   nx, ny, χ, time_steps, Jperp
 )
 
-save = true
 if save
   file_str =
     "/mnt/home/jtindall/Documents/Data/ITensorNetworks/CoupledHeisenberg/TDVPChi" *
