@@ -106,7 +106,8 @@ function calculate_Q2(
 
   for v_set in vertex_sets
     for string in strings
-      out += expect_BP(string, ψ, ψψ, mts, v_set)
+      o, _ = expect_BP(string, ψ, ψψ, mts, v_set)
+      out += o
     end
   end
 
@@ -131,14 +132,45 @@ function calculate_Q3(
 
   for v_set in vertex_sets
     for pos_string in pos_strings
-      out += expect_BP_splitindex(
-        pos_string, ψ, ψψ, mts, v_set, NamedEdge(first(v_set) => last(v_set))
-      )
+      o, _ = expect_BP(pos_string, ψ, ψψ, mts, v_set)
+      out += o
     end
     for neg_string in neg_strings
-      out -= expect_BP_splitindex(
-        neg_string, ψ, ψψ, mts, v_set, NamedEdge(first(v_set) => last(v_set))
-      )
+      o, _ = expect_BP(neg_string, ψ, ψψ, mts, v_set)
+      out -= o
+    end
+  end
+
+  return out / (length(nx_iter) * length(ny_iter))
+end
+
+function calculate_Q4(
+  ψ::AbstractITensorNetwork, ψψ::AbstractITensorNetwork, mts::DataGraph, central_row=true
+)
+  ny, nx = maximum(vertices(ψ))
+  ny_iter = central_row ? [ceil(Int64, ny * 0.5)] : [i for i in 1:ny]
+  nx_iter = [i for i in 1:nx]
+
+  ts_strings = [["X", "I", "X", "I"], ["Y", "I", "Y", "I"], ["Z", "I", "Z", "I"]]
+  pos_strings = [["Y", "X", "Y", "X"], ["X", "Y", "X", "Y"], ["Z", "X", "Z", "X"], ["Z", "Y", "Z", "Y"], ["X", "Z", "X", "Z"], ["Y", "Z", "Y", "Z"]]
+  neg_strings = [["X", "Y", "Y", "X"], ["Y", "X", "X", "Y"], ["X", "Z", "Z", "X"], ["Y", "Z", "Z", "Y"], ["Z", "X", "X", "Z"], ["Z", "Y", "Y", "Z"]]
+
+  out = 0
+  vertex_sets = [
+    [(j, mod(i, nx) + 1), (j, mod(i + 1, nx) + 1), (j, mod(i + 2, nx) + 1), (j, mod(i + 3, nx) + 1)] for i in
+                                                                                nx_iter for
+    j in ny_iter
+  ]
+
+  for v_set in vertex_sets
+    seq = nothing
+    for pos_string in vcat(pos_strings, ts_strings)
+      o, seq = expect_BP(pos_string, ψ, ψψ, mts, v_set; sequence = seq)
+      out += o
+    end
+    for neg_string in neg_strings
+      o, seq = expect_BP(neg_string, ψ, ψψ, mts, v_set; sequence = seq)
+      out -= o
     end
   end
 
@@ -172,9 +204,12 @@ function main(
   Q1s = zeros((length(time_steps) + 1))
   Q2s = zeros((length(time_steps) + 1))
   Q3s = zeros((length(time_steps) + 1))
+  Q4s = zeros((length(time_steps) + 1))
+  Q4s[1] = real(calculate_Q4(ψ, ψψ, mts))
   Q3s[1] = real(calculate_Q3(ψ, ψψ, mts))
   Q2s[1] = real(calculate_Q2(ψ, ψψ, mts))
   Q1s[1] = mean(collect(values(real.(expect_BP("Z", ψ, ψψ, mts)))))
+
   times = vcat([0.0], cumsum(time_steps))
 
   for (i, dt) in enumerate(time_steps)
@@ -195,6 +230,7 @@ function main(
     Q1s[i + 1] = mean(collect(values(real.(expect_BP("Z", ψ, ψψ, mts)))))
     Q2s[i + 1] = real(calculate_Q2(ψ, ψψ, mts))
     Q3s[i + 1] = real(calculate_Q3(ψ, ψψ, mts))
+    Q4s[i + 1] = real(calculate_Q4(ψ, ψψ, mts))
 
     flush(stdout)
   end
@@ -208,10 +244,11 @@ function main(
   ΔQ1 = abs(Q1s[length(time_steps) + 1] - Q1s[1])
   ΔQ2 = abs(Q2s[length(time_steps) + 1] - Q2s[1])
   ΔQ3 = abs(Q3s[length(time_steps) + 1] - Q3s[1])
+  ΔQ4 = abs(Q4s[length(time_steps) + 1] - Q4s[1])
 
-  println("Evolution finished. Change in conserved quantitys is $ΔQ1, $ΔQ2 and $ΔQ3.")
+  println("Evolution finished. Change in conserved quantitys is $ΔQ1, $ΔQ2, $ΔQ3 and $ΔQ4.")
 
-  return Q1s, Q2s, Q3s, times
+  return Q1s, Q2s, Q3s, Q4s, times
 end
 
 if length(ARGS) > 1
@@ -219,17 +256,19 @@ if length(ARGS) > 1
   χperp = parse(Int64, ARGS[2])
   Jperp = parse(Float64, ARGS[3])
   save = true
+  nsteps = 120
 else
-  Jperp = 0.0
-  χparr, χperp = 64, 1
+  Jperp = 0.05
+  χparr, χperp = 64, 16
+  nsteps = 40
 end
 
-g = named_grid((3, 3); periodic=true)
-time_steps = [0.1 for i in 1:200]
+g = named_grid((3, 6); periodic=true)
+time_steps = [0.1 for i in 1:nsteps]
 
 @show χparr, χperp
 flush(stdout)
-Q1s, Q2s, Q3s, times = main(g, χparr, χperp, time_steps, Jperp)
+Q1s, Q2s, Q3s, Q4s, times = main(g, χparr, χperp, time_steps, Jperp)
 
 save = true
 if save
@@ -243,5 +282,5 @@ if save
     "Tmax" *
     string(round(sum(time_steps); digits=3))
   file_str *= ".npz"
-  npzwrite(file_str; Q1s=Q1s, Q2s=Q2s, Q3s=Q3s, times=times)
+  npzwrite(file_str; Q1s=Q1s, Q2s=Q2s, Q3s=Q3s,Q4s = Q4s, times=times)
 end
