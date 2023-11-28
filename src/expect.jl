@@ -73,7 +73,7 @@ function expect_BP(
     sequence = contraction_sequence(numerator_network)
   end
 
-  return contract(numerator_network; sequence)[] / contract(denominator_network; sequence)[]
+  return contract(numerator_network; sequence)[] / contract(denominator_network; sequence)[], sequence
 end
 
 function expect_BP(
@@ -86,7 +86,7 @@ function expect_BP(
   ElT = promote_itensor_eltype(ψ)
   res = Dictionary(vertices, Vector{ElT}(undef, length(vertices)))
   for v in vertices
-    res[v] = expect_BP(String[op], ψ, ψψ, mts, [v])
+    res[v], _ = expect_BP(String[op], ψ, ψψ, mts, [v])
   end
 
   return res

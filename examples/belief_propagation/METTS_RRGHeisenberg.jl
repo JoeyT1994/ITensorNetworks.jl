@@ -127,6 +127,20 @@ function expect_state_SBP(
          ITensors.contract(denominator_network; sequence=den_seq)[]
 end
 
+function compute_ees(bond_tensors::DataGraph)
+  out = zeros((length(edges(bond_tensors))))
+  for (i, e) in enumerate(edges(bond_tensors))
+    D = diag(bond_tensors[e])
+    for d in D
+      if(abs(d) >= 1e-14)
+        out[i] -= d*d*log2(d*d)
+      end
+    end
+  end
+  return out
+end
+
+
 function main(;
   χ::Int64=8,
   z::Int64=3,
@@ -148,6 +162,7 @@ function main(;
   xmags = zeros((nMETTS + nwarmupMETTS, length(vertices(g))))
   ymags = zeros((nMETTS + nwarmupMETTS, length(vertices(g))))
   zmags = zeros((nMETTS + nwarmupMETTS, length(vertices(g))))
+  ees = zeros((nMETTS + nwarmupMETTS, length(edges(g))))
   errs = zeros((nMETTS + nwarmupMETTS))
   projs = ["Z+", "X+", "Y+", "Z-", "X-", "Y-"]
 
@@ -183,9 +198,9 @@ function main(;
         cur_C = vidal_itn_canonicalness(ψ, bond_tensors)
       end
     end
-    e = e ^ (1.0/ (n_dbetas * length(u⃗)))
-    @show maxlinkdim(ψ)
 
+    ees[k, :] = compute_ees(bond_tensors)
+    e = e ^ (1.0/ (n_dbetas * length(u⃗)))
     ψ, mts = vidal_to_symmetric_gauge(ψ, bond_tensors)
     ψψ = norm_network(ψ)
     xmags[k, :] = Float64[
@@ -231,7 +246,7 @@ function main(;
     string(id)
   file_str *= ".npz"
   if save
-    npzwrite(file_str; xmags=xmags, ymags=ymags, zmags=zmags, errs = errs)
+    npzwrite(file_str; xmags=xmags, ymags=ymags, zmags=zmags, errs = errs, ees = ees)
   end
 end
 
@@ -246,8 +261,8 @@ if length(ARGS) > 1
   id = parse(Int64, ARGS[8])
   save = true
 else
-  χ, z, nverts, T, W, id, nMETTS, nwarmupMETTS = 6, 3, 250, 0.25, 0.0, 1, 0, 1
-  save = false
+  χ, z, nverts, T, W, id, nMETTS, nwarmupMETTS = 6, 3, 10, 1.0, 0.0, 1, 0, 1
+  save = true
 end
 
 main(; χ, z, nverts, T, W, id, nMETTS, nwarmupMETTS, save, dβ = 0.1)

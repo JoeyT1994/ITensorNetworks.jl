@@ -174,7 +174,7 @@ if length(ARGS) > 1
   ny = parse(Int64, ARGS[2])
   χ = parse(Int64, ARGS[3])
   Jperp = parse(Float64, ARGS[4])
-  nsteps = 1000
+  nsteps = 100
   save = true
 else
   nx, ny = 36, 2
@@ -184,7 +184,7 @@ else
   nsteps = 100
 end
 
-time_steps = [0.01 for i in 1:nsteps]
+time_steps = [0.1 for i in 1:nsteps]
 
 @show χ, Jperp
 flush(stdout)

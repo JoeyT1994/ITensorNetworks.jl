@@ -44,11 +44,11 @@ function heisenberg_chains(g::NamedGraph; J1=1.0, J2=0.0)
 end
 
 function calculate_Q2(
-  ψ::AbstractITensorNetwork, ψψ::AbstractITensorNetwork, mts::DataGraph; central_row=true
+  ψ::AbstractITensorNetwork, ψψ::AbstractITensorNetwork, mts::DataGraph; central_row=true, nxiters = nx
 )
   ny, nx = maximum(vertices(ψ))
   ny_iter = central_row ? [ceil(Int64, ny * 0.5)] : [i for i in 1:ny]
-  nx_iter = [i for i in 1:nx]
+  nx_iter = [i for i in 1:nxiters]
 
   strings = [["X", "X"], ["Y", "Y"], ["Z", "Z"]]
   out = 0
@@ -57,8 +57,10 @@ function calculate_Q2(
   ]
 
   for v_set in vertex_sets
+    seq = nothing
     for string in strings
-      out += expect_BP(string, ψ, ψψ, mts, v_set)
+      o, seq = expect_BP(string, ψ, ψψ, mts, v_set; sequence = seq)
+      out += o 
     end
   end
 
@@ -66,7 +68,7 @@ function calculate_Q2(
 end
 
 function calculate_Q2_exact(
-  ψ::ITensor, nx::Int64, ny::Int64, s::IndsNetwork; z=nothing, central_row=true
+  ψ::ITensor, nx::Int64, ny::Int64, s::IndsNetwork; z=nothing, central_row=true, nxiters = nx
 )
   ψ = copy(ψ)
   if isnothing(z)
@@ -74,7 +76,7 @@ function calculate_Q2_exact(
   end
 
   ny_iter = central_row ? [ceil(Int64, ny * 0.5)] : [i for i in 1:ny]
-  nx_iter = [i for i in 1:nx]
+  nx_iter = [i for i in 1:nxiters]
 
   strings = [["X", "X"], ["Y", "Y"], ["Z", "Z"]]
   out = 0
@@ -96,11 +98,11 @@ function calculate_Q2_exact(
 end
 
 function calculate_Q3(
-  ψ::AbstractITensorNetwork, ψψ::AbstractITensorNetwork, mts::DataGraph, central_row=true
+  ψ::AbstractITensorNetwork, ψψ::AbstractITensorNetwork, mts::DataGraph; central_row=true, nxiters = nx
 )
   ny, nx = maximum(vertices(ψ))
   ny_iter = central_row ? [ceil(Int64, ny * 0.5)] : [i for i in 1:ny]
-  nx_iter = [i for i in 1:nx]
+  nx_iter = [i for i in 1:nxiters]
 
   pos_strings = [["X", "Y", "Z"], ["Y", "Z", "X"], ["Z", "X", "Y"]]
   neg_strings = [["X", "Z", "Y"], ["Y", "X", "Z"], ["Z", "Y", "X"]]
@@ -112,11 +114,14 @@ function calculate_Q3(
   ]
 
   for v_set in vertex_sets
+    seq = nothing
     for pos_string in pos_strings
-      out += expect_BP(pos_string, ψ, ψψ, mts, v_set)
+      o, seq = expect_BP(pos_string, ψ, ψψ, mts, v_set; sequence = seq)
+      out += o
     end
     for neg_string in neg_strings
-      out -= expect_BP(neg_string, ψ, ψψ, mts, v_set)
+      o, seq = expect_BP(neg_string, ψ, ψψ, mts, v_set; sequence = seq)
+      out -= o
     end
   end
 
@@ -124,14 +129,14 @@ function calculate_Q3(
 end
 
 function calculate_Q3_exact(
-  ψ::ITensor, nx::Int64, ny::Int64, s::IndsNetwork; z=nothing, central_row=true
+  ψ::ITensor, nx::Int64, ny::Int64, s::IndsNetwork; z=nothing, central_row=true, nxiters = nx
 )
   ψ = copy(ψ)
   if isnothing(z)
     z = (ψ * dag(ψ))[]
   end
   ny_iter = central_row ? [ceil(Int64, ny * 0.5)] : [i for i in 1:ny]
-  nx_iter = [i for i in 1:nx]
+  nx_iter = [i for i in 1:nxiters]
 
   pos_strings = [["X", "Y", "Z"], ["Y", "Z", "X"], ["Z", "X", "Y"]]
   neg_strings = [["X", "Z", "Y"], ["Y", "X", "Z"], ["Z", "Y", "X"]]
@@ -284,6 +289,9 @@ function main(
   #state_vector_backend = true
   ny, nx = maximum(vertices(g))
   ITensors.disable_warn_order()
+  calculate_GBP = true
+  use_periodicity = false
+  nxiters = use_periodicity ? 3 : nx
 
   ψ = ITensorNetwork(s, v -> if (v[2] + 2) % 3 == 0
     "X+"
@@ -303,9 +311,12 @@ function main(
   time = 0
   Q1s = zeros((length(time_steps) + 1))
   Q2s = zeros((length(time_steps) + 1))
+  Q2s_GBP = zeros((length(time_steps) + 1))
   Q3s = zeros((length(time_steps) + 1))
-  Q3s[1] = real(calculate_Q3(ψ, ψψ, mts))
-  Q2s[1] = real(calculate_Q2(ψ, ψψ, mts))
+  Q3s_GBP = zeros((length(time_steps) + 1))
+  Q3s[1] = real(calculate_Q3(ψ, ψψ, mts; nxiters))
+  Q2s[1] = real(calculate_Q2(ψ, ψψ, mts; nxiters))
+  Q2s_GBP[1], Q3s_GBP[1] = Q2s[1], Q3s[1]
   Q1s[1] = mean(collect(values(real.(expect_BP("Z", ψ, ψψ, mts)))))
   Q1s_exact, Q2s_exact, Q3s_exact = copy(Q1s), copy(Q2s), copy(Q3s)
   times = vcat([0.0], cumsum(time_steps))
@@ -333,11 +344,19 @@ function main(
       ψψ, mts; contract_kwargs=(; alg="exact"), niters=20, target_precision=1e-3
     )
     Q1s[i + 1] = mean(collect(values(real.(expect_BP("Z", ψ, ψψ, mts)))))
-    Q2s[i + 1] = real(calculate_Q2(ψ, ψψ, mts))
-    Q3s[i + 1] = real(calculate_Q3(ψ, ψψ, mts))
+    Q2s[i + 1] = real(calculate_Q2(ψ, ψψ, mts; nxiters))
+    Q3s[i + 1] = real(calculate_Q3(ψ, ψψ, mts; nxiters))
     if state_vector_backend
       Q2s_exact[i + 1] = real(calculate_Q2_exact(ψ_sv, nx, ny, s))
       Q3s_exact[i + 1] = real(calculate_Q3_exact(ψ_sv, nx, ny, s))
+    end
+
+    if calculate_GBP
+      Z = partition(ψψ, group(v -> v[1][2], vertices(ψψ)))
+      GBP_mts = message_tensors(Z)
+      GBP_mts = belief_propagation(ψψ, GBP_mts; contract_kwargs=(; alg="exact"))
+      Q2s_GBP[i + 1] = real(calculate_Q2(ψ, ψψ, GBP_mts; nxiters = 3))
+      Q3s_GBP[i + 1] = real(calculate_Q3(ψ, ψψ, GBP_mts; nxiters = 3))
     end
 
     flush(stdout)
@@ -355,7 +374,7 @@ function main(
 
   println("Evolution finished. Change in conserved quantitys is $ΔQ1, $ΔQ2 and $ΔQ3.")
 
-  return Q1s, Q2s, Q3s, Q1s_exact, Q2s_exact, Q3s_exact, times
+  return Q1s, Q2s, Q2s_GBP, Q3s, Q3s_GBP, Q1s_exact, Q2s_exact, Q3s_exact, times
 end
 
 if length(ARGS) > 1
@@ -366,22 +385,22 @@ if length(ARGS) > 1
   Jperp = parse(Float64, ARGS[5])
   save = true
 else
-  nx, ny = 36, 2
+  nx, ny = 18, 2
   Jperp = 0.05
-  χparr, χperp = 64, 16
+  χparr, χperp = 12, 12
+  save = true
 end
 
 g = grid_periodic_x(ny, nx)
 
-time_steps = [0.1 for i in 1:100]
+time_steps = [0.1 for i in 1:80]
 
 @show χparr, χperp, Jperp
 flush(stdout)
-Q1s, Q2s, Q3s, Q1s_exact, Q2s_exact, Q3s_exact, times = main(
+Q1s, Q2s, Q2s_GBP, Q3s, Q3s_GBP, Q1s_exact, Q2s_exact, Q3s_exact, times = main(
   g, χparr, χperp, time_steps, Jperp
 )
 
-save = true
 if save
   file_str =
     "/mnt/home/jtindall/Documents/Data/ITensorNetworks/CoupledHeisenberg/ChiParr" *
@@ -401,7 +420,9 @@ if save
     file_str;
     Q1s=Q1s,
     Q2s=Q2s,
+    Q2s_GBP = Q2s_GBP,
     Q3s=Q3s,
+    Q3s_GBP = Q3s_GBP,
     Q1s_exact=Q1s_exact,
     Q2s_exact=Q2s_exact,
     Q3s_exact=Q3s_exact,

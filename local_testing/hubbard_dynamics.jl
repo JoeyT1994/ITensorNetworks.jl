@@ -114,7 +114,7 @@ function main(
     time += dt
 
     mts = belief_propagation(
-      ψψ, mts; contract_kwargs=(; alg="exact"), niters=250, target_precision=1e-3
+      ψψ, mts; contract_kwargs=(; alg="exact"), niters=250, target_precision=1e-3, verbose = true
     )
     doublon_occs[:, i + 1] = collect(values(real.(expect_BP("Nupdn", ψ, ψψ, mts))))
     flush(stdout)
@@ -138,11 +138,11 @@ else
   χ = 16
 end
 
-time_steps = [0.05 for i in 1:100]
+time_steps = [0.05 for i in 1:60]
 init_occs = Dictionary(Dict(zip(vertices(g), [v <= z ? "Up" : "Dn" for v in vertices(g)])))
 
 Us = [0.0]
-χs = [64]
+χs = [256, 300, 400, 512]
 for U in Us
   for χ in χs
     @show χ, z
