@@ -175,6 +175,7 @@ function simple_update_bp(o, ψ, v⃗; envs, (observer!)=nothing, apply_kwargs..
   noprime!(ψᵥ₁)
   noprime!(ψᵥ₂)
 
+  #Do not trust the QR here for fermions!!!!
   sᵥ₁ = siteinds(ψ, v⃗[1])
   sᵥ₂ = siteinds(ψ, v⃗[2])
   Qᵥ₁, Rᵥ₁ = qr(ψᵥ₁, uniqueinds(uniqueinds(ψᵥ₁, ψᵥ₂), sᵥ₁))

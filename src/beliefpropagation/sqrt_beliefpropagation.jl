@@ -2,13 +2,8 @@
 # using ITensorNetworks: find_subgraph, map_diag, sqrt_diag, boundary_edges
 
 function sqrt_belief_propagation_iteration(
-<<<<<<< HEAD
-  tn::ITensorNetwork, sqrt_mts::DataGraph, edges::Vector{E}
-) where {E<:NamedEdge}
-=======
   tn::ITensorNetwork, sqrt_mts::DataGraph, edges::Vector{<:AbstractEdge}
 )
->>>>>>> upstream/main
   new_sqrt_mts = copy(sqrt_mts)
   c = 0.0
   for e in edges
@@ -33,13 +28,8 @@ function sqrt_belief_propagation_iteration(
 end
 
 function sqrt_belief_propagation_iteration(
-<<<<<<< HEAD
-  tn::ITensorNetwork, sqrt_mts::DataGraph, edges::Vector{Vector{E}}
-) where {E<:NamedEdge}
-=======
   tn::ITensorNetwork, sqrt_mts::DataGraph, edges::Vector{<:Vector{<:AbstractEdge}}
 )
->>>>>>> upstream/main
   new_sqrt_mts = copy(sqrt_mts)
   c = 0.0
   for e_group in edges
@@ -53,33 +43,14 @@ function sqrt_belief_propagation_iteration(
 end
 
 function sqrt_belief_propagation_iteration(
-<<<<<<< HEAD
-  tn::ITensorNetwork,
-  sqrt_mts::DataGraph;
-  edges::Union{Vector{Vector{E}},Vector{E}}=belief_propagation_edge_sequence(
-    undirected_graph(underlying_graph(mts))
-  ),
-) where {E<:NamedEdge}
-=======
   tn::ITensorNetwork, sqrt_mts::DataGraph; edges=edge_sequence(mts)
 )
->>>>>>> upstream/main
   return sqrt_belief_propagation_iteration(tn, sqrt_mts, edges)
 end
 
 function sqrt_belief_propagation(
   tn::ITensorNetwork,
   mts::DataGraph;
-<<<<<<< HEAD
-  niters=20,
-  edges::Union{Vector{Vector{E}},Vector{E}}=belief_propagation_edge_sequence(
-    undirected_graph(underlying_graph(mts))
-  ),
-  # target_precision::Union{Float64,Nothing}=nothing,
-) where {E<:NamedEdge}
-  # compute_norm = target_precision == nothing ? false : true
-  sqrt_mts = sqrt_message_tensors(tn, mts)
-=======
   niters=default_bp_niters(mts),
   edges=edge_sequence(mts),
   # target_precision::Union{Float64,Nothing}=nothing,
@@ -89,7 +60,6 @@ function sqrt_belief_propagation(
   if isnothing(niters)
     error("You need to specify a number of iterations for BP!")
   end
->>>>>>> upstream/main
   for i in 1:niters
     sqrt_mts, c = sqrt_belief_propagation_iteration(tn, sqrt_mts, edges) #; compute_norm)
     # if compute_norm && c <= target_precision

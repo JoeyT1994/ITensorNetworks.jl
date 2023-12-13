@@ -39,8 +39,8 @@ function exp_ITensor(A::ITensor, beta::Union{Float64,ComplexF64}; nterms=10)
   s1, s2, s3, s4 = inds(A; plev=1)[1],
   inds(A; plev=1)[2], inds(A; plev=0)[1],
   inds(A; plev=0)[2]
-  # out[s1 => 2, s2 => 2, s3 => 2, s4 => 2] = -1.0
   out = dag(op("I", s3) * op("I", s4))
+
   power = copy(out)
   for i in 1:nterms
     power = (1 / i) * swapprime(beta * power * prime(A), 2, 1)
@@ -51,40 +51,75 @@ function exp_ITensor(A::ITensor, beta::Union{Float64,ComplexF64}; nterms=10)
   return out
 end
 
-function doublon_op(s::Index)
-  o = op("Nup", s)
-  o = o * prime(op("Ndn", s))
-  swapprime!(o, 2, 1)
-  return o
-end
-
 function hubbard_chain_gates(
-  s::IndsNetwork; U::Float64=0.0, t::Float64=1.0, tperp::Float64=0.0, dt::Float64=0.1
+  s::IndsNetwork; U::Float64=0.0, t::Float64=1.0, tperp::Float64=0.0, dt::Float64=0.1, time_evolve = true
 )
   gates = ITensor[]
   for e in edges(s)
     vsrc, vdst = src(e), dst(e)
-    @show
     vsrc_z, vdst_z = length(neighbors(g, vsrc)), length(neighbors(g, vdst))
-    t = src(e)[1] != dst(e)[1] ? tperp : t
-    if !iszero(t)
-      hj =
-        -t * op("Cdagup", s[vsrc]) * op("Cup", s[vdst]) +
-        t * op("Cup", s[vsrc]) * op("Cdagup", s[vdst]) -
-        t * op("Cdagdn", s[vsrc]) * op("Cdn", s[vdst]) +
-        t * op("Cdn", s[vsrc]) * op("Cdagdn", s[vdst])
-    end
-    if !iszero(U)
-      hj +=
-        (U / vsrc_z) * op("Nupdn", s[vsrc]) * op("I", s[vdst]) +
-        (U / vdst_z) * op("I", s[vsrc]) * op("Nupdn", s[vdst])
-    end
-
+    thop = src(e)[1] != dst(e)[1] ? tperp : t
     if !iszero(t) || !iszero(U)
-      push!(gates, exp_ITensor(hj, dt * im / 2))
+      hj =
+        -thop * op("Cdagup", s[vsrc]) * op("Cup", s[vdst]) +
+        thop * op("Cup", s[vsrc]) * op("Cdagup", s[vdst]) -
+        thop * op("Cdagdn", s[vsrc]) * op("Cdn", s[vdst]) +
+        thop * op("Cdn", s[vsrc]) * op("Cdagdn", s[vdst])
+
+      hj +=
+      (U / vsrc_z) * op("Nupdn", s[vsrc]) * op("I", s[vdst]) +
+      (U / vdst_z) * op("I", s[vsrc]) * op("Nupdn", s[vdst])
+
+      if time_evolve
+        push!(gates, exp_ITensor(hj, dt * im / 2))
+      else
+        push!(gates,hj)
+      end
     end
   end
-  append!(gates, reverse(gates))
+  if time_evolve
+    append!(gates, reverse(gates))
+  end
+
+  return gates
+end
+
+function hubbard_chain_gates_V2(
+  s::IndsNetwork; U::Float64=0.0, t::Float64=1.0, tperp::Float64=0.0, dt::Float64=0.1, time_evolve = true
+)
+  gates = ITensor[]
+  for e in edges(s)
+    vsrc, vdst = src(e), dst(e)
+    thop = src(e)[1] != dst(e)[1] ? tperp : t
+    if !iszero(t)
+      hj =
+        -thop * op("Cdagup", s[vsrc]) * op("Cup", s[vdst]) +
+        thop * op("Cup", s[vsrc]) * op("Cdagup", s[vdst]) -
+        thop * op("Cdagdn", s[vsrc]) * op("Cdn", s[vdst]) +
+        thop * op("Cdn", s[vsrc]) * op("Cdagdn", s[vdst])
+
+      if time_evolve
+        push!(gates, exp_ITensor(hj, dt * im / 2))
+      else
+        push!(gates,hj)
+      end
+    end
+  end
+
+  for v in vertices(s)
+    if !iszero(U)
+      hj = U* op("Nupdn", s[v])
+      if time_evolve
+        push!(gates, exp(dt * im *0.5 * hj))
+      else
+        push!(gates,hj)
+      end
+    end
+  end
+
+  if time_evolve
+    append!(gates, reverse(gates))
+  end
 
   return gates
 end
@@ -128,6 +163,75 @@ function grid_periodic_x(ny::Int64, nx::Int64)
   return g
 end
 
+#TAKING A TWO-SITE EXPEC IS NOT LOOKING GOOD?!?!
+"""Take the expectation value of o on an ITN using belief propagation"""
+function gate_expect_beliefpropagation(
+  o::ITensor, ψ::AbstractITensorNetwork, ψψ::AbstractITensorNetwork, mts::DataGraph
+)
+  #Why do I need to turn off reduced here for a two-site gate?!?!?!
+  Oψ, _, _ = apply(o, ψ, ψψ, mts; reduced = true)
+  #Oψ = apply(o, ψ)
+  s = siteinds(ψ)
+  vs = vertices(s)[findall(i -> (length(commoninds(s[i], inds(o))) != 0), vertices(s))]
+  vs_braket = [(v, 1) for v in vs]
+
+  numerator_network = approx_network_region(
+    ψψ, mts, vs_braket; verts_tn=ITensorNetwork(ITensor[Oψ[v] for v in vs])
+  )
+  denominator_network = approx_network_region(ψψ, mts, vs_braket)
+  num_seq = contraction_sequence(numerator_network; alg="optimal")
+
+  return contract(numerator_network; sequence=num_seq)[] /
+         contract(denominator_network; sequence=num_seq)[]
+end
+
+#TAKING A TWO-SITE EXPEC IS NOT LOOKING GOOD?!?!
+"""Take the expectation value of o on an ITN using belief propagation"""
+function gate_expect_beliefpropagation_V2(
+  o::ITensor, ψ::AbstractITensorNetwork, ψψ::AbstractITensorNetwork, mts::DataGraph
+)
+
+  ψ = copy(ψ)
+  s = siteinds(ψ)
+  vs = vertices(s)[findall(i -> (length(commoninds(s[i], inds(o))) != 0), vertices(s))]
+  vs_braket = [(v, 1) for v in vs]
+
+  #Oψ, _, _ = apply(o, ψ, ψψ, mts; reduced = false, normalize = false)
+  Oψ = apply(o , ψ; reduced = false)
+  verts_tn=ITensorNetwork(ITensor[Oψ[v] for v in vs])
+
+  numerator_network = approx_network_region(
+    ψψ, mts, vs_braket; verts_tn
+  )
+
+  denominator_network = approx_network_region(ψψ, mts, vs_braket)
+  num_seq = contraction_sequence(numerator_network; alg="optimal")
+  den_seq = contraction_sequence(denominator_network; alg="optimal")
+
+  return contract(numerator_network; sequence=num_seq)[] /
+          contract(denominator_network; sequence=den_seq)[]
+end
+
+function calculate_Q2(ψ::ITensorNetwork, ψψ::ITensorNetwork, mts::DataGraph; U::Float64 = 0.0)
+  s = siteinds(ψ)
+  gates = hubbard_chain_gates_V2(s; U, tperp = 0.0, time_evolve = false)
+  out = 0
+  for gate in gates
+    o = gate_expect_beliefpropagation_V2(gate, ψ, ψψ, mts)
+    if length(inds(gate)) > 2
+      if real(o) > 0.0
+        o = -1.0 *o
+      end
+    end
+    out += o
+  end
+  return out
+end
+
+### 1) Fix need to use reduce on apply function (QR not working)
+### 2) Fix need to put sign in on expectation value of hopping?!?!
+### 3_ Fix the problem in the proper branch, not here!!!!
+
 function main(
   g::NamedGraph,
   χparr::Int64,
@@ -136,28 +240,25 @@ function main(
   tperp::Float64=0.0,
   U::Float64=10.0,
 )
-  #s = siteinds("S=1/2", g; conserve_qns=true)
   s = siteinds("Electron", g; conserve_qns=true)
-  state_vector_backend = length(vertices(g)) < 15 ? true : false
-  #state_vector_backend = true
+  state_vector_backend = length(vertices(g)) < 10 ? true : false
   ny, nx = maximum(vertices(g))
   ITensors.disable_warn_order()
 
-  ψ = ITensorNetwork(s, v -> (v[2]) % 2 == 0 ? "Up" : "Dn")
+  ψ = ITensorNetwork(s, v -> (v[1] + v[2]) % 2 == 0 ? "Up" : "Dn")
   ψψ = ψ ⊗ prime(dag(ψ); sites=[])
   mts = message_tensors(
     ψψ;
     subgraph_vertices=collect(values(group(v -> v[1], vertices(ψψ)))),
     itensor_constructor=denseblocks ∘ delta,
   )
-  mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
-  gates = hubbard_chains(g; t2=tperp, U=U)
+  mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"),  target_precision=1e-3, niters = 30)
   time = 0
   Q1s = zeros((length(time_steps) + 1))
   Q2s = zeros((length(time_steps) + 1))
   Q3s = zeros((length(time_steps) + 1))
   #Q3s[1] = real(calculate_Q3(ψ, ψψ, mts))
-  #Q2s[1] = real(calculate_Q2(ψ, ψψ, mts))
+  #Q2s[1] = real(calculate_Q2(ψ, ψψ, mts; U))
   Q1s[1] = mean(collect(values(real.(expect_BP("Ntot", ψ, ψψ, mts)))))
   Q1s_exact, Q2s_exact, Q3s_exact = copy(Q1s), copy(Q2s), copy(Q3s)
   times = vcat([0.0], cumsum(time_steps))
@@ -166,26 +267,29 @@ function main(
     ψ_sv = reduce(*, ITensor[ψ[v] for v in vertices(ψ)])
   end
 
-  @show collect(values(real.(expect_BP("Nup", ψ, ψψ, mts))))
   for (i, dt) in enumerate(time_steps)
     #@show time
     #𝒰 = exp(-im * dt * gates; alg=Trotter{2}())
     #u⃗ = Vector{ITensor}(𝒰, s)
-    u⃗ = hubbard_chain_gates(s; U, tperp, dt)
+    u⃗ = hubbard_chain_gates_V2(s; U, tperp, dt)
     for (j, u) in enumerate(u⃗)
       v⃗ = ITensorNetworks._gate_vertices(u, ψ)
-      e = NamedEdge(v⃗[1] => v⃗[2])
-      χ = src(e)[1] != dst(e)[1] ? χperp : χparr
-      ψ, ψψ, mts = apply(u, ψ, ψψ, mts; maxdim=χ, cutoff=1e-12)
+      if length(v⃗) == 2
+        e = NamedEdge(v⃗[1] => v⃗[2])
+        χ = src(e)[1] != dst(e)[1] ? χperp : χparr
+        ψ, ψψ, mts = apply(u, ψ, ψψ, mts; maxdim=χ, reduced = false)
+      else
+        ψ, ψψ, mts = apply(u, ψ, ψψ, mts)
+      end
       if state_vector_backend
         ψ_sv = noprime(ψ_sv * u)
       end
     end
     time += dt
 
-    mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters=20)
+    mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), target_precision=1e-3)
     Q1s[i + 1] = mean(collect(values(real.(expect_BP("Ntot", ψ, ψψ, mts)))))
-    #Q2s[i + 1] = real(calculate_Q2(ψ, ψψ, mts))
+    #Q2s[i + 1] = real(calculate_Q2(ψ, ψψ, mts; U))
     #Q3s[i + 1] = real(calculate_Q3(ψ, ψψ, mts))
     #if state_vector_backend
     #  Q2s_exact[i + 1] = real(calculate_Q2_exact(ψ_sv, nx, ny, s))
@@ -195,11 +299,31 @@ function main(
     flush(stdout)
   end
 
-  @show abs.(
-    [exact_state_vector(ψ_sv, op("Nupdn", s[v])) for v in vertices(g)] - collect(values(real.(expect_BP("Nupdn", ψ, ψψ, mts))))
-  )
+  NupNdns = collect(values(real.(expect_BP("Nupdn", ψ, ψψ, mts))))
 
-  mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters=30)
+  #f = ITensors.contract(ITensors.contract(dag(ψ)), ψ_sv)[] / sqrt(real(ITensors.contract(ITensors.contract(dag(ψ)), ITensors.contract(ψ))[])) 
+  #@show f*conj(f)
+
+  E_hops = []
+  for i in 1:(nx-1)
+    for j in 1:ny
+      vsrc, vdst = (j,i), (j,i + 1)
+      gate = -1.0 * op("Cdagup", s[vsrc]) * op("Cup", s[vdst]) +
+        1.0 * op("Cup", s[vsrc]) * op("Cdagup", s[vdst]) -
+        1.0 * op("Cdagdn", s[vsrc]) * op("Cdn", s[vdst]) +
+        1.0 * op("Cdn", s[vsrc]) * op("Cdagdn", s[vdst])
+      E_hop = gate_expect_beliefpropagation_V2(gate, ψ, ψψ, mts)
+      if real(E_hop) > 0.0
+        E_hop = -1.0 * E_hop
+      end
+      append!(E_hops, E_hop)
+    end
+  end
+  #@show real(calculate_Q2(ψ, ψψ, mts; U))
+  E_U = U*sum(NupNdns)
+  E_hop = sum(E_hops)
+  println("Energy stemming from Doublon Occupation is $E_U")
+  println("Energy stemming from Hopping is $E_hop")
 
   ΔQ1 = abs(Q1s[length(time_steps) + 1] - Q1s[1])
   ΔQ2 = abs(Q2s[length(time_steps) + 1] - Q2s[1])
@@ -221,16 +345,16 @@ if length(ARGS) > 1
   U = parse(Float64, ARGS[6])
   save = true
 else
-  nx, ny = 6, 1
+  nx, ny =6, 2
   tperp = 0.0
-  U = 2.1
-  χparr, χperp = 24, 1
+  U = 3.0
+  χparr, χperp = 16, 4
 end
 
 #g = grid_periodic_x(ny, nx)
 g = named_grid((ny, nx))
 
-time_steps = [0.05 for i in 1:20]
+time_steps = [0.01 for i in 1:50]
 
 @show χparr, χperp
 flush(stdout)

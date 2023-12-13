@@ -40,11 +40,7 @@ ITensors.disable_warn_order()
 
   Z = partition(ψψ; subgraph_vertices=collect(values(group(v -> v[1], vertices(ψψ)))))
   mts = message_tensors(Z)
-<<<<<<< HEAD
-  mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters=1)
-=======
   mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
->>>>>>> upstream/main
 
   numerator_network = approx_network_region(
     ψψ, mts, [(v, 1)]; verts_tn=ITensorNetwork(ITensor[apply(op("Sz", s[v]), ψ[v])])
@@ -71,11 +67,7 @@ ITensors.disable_warn_order()
 
   Z = partition(ψψ; subgraph_vertices=collect(values(group(v -> v[1], vertices(ψψ)))))
   mts = message_tensors(Z)
-<<<<<<< HEAD
-  mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters=1)
-=======
   mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
->>>>>>> upstream/main
 
   numerator_network = approx_network_region(
     ψψ, mts, [(v, 1)]; verts_tn=ITensorNetwork(ITensor[apply(op("Sz", s[v]), ψ[v])])
@@ -109,12 +101,7 @@ ITensors.disable_warn_order()
 
   denominator_network = approx_network_region(ψψ, mts, vs)
   bp_szsz =
-<<<<<<< HEAD
-    ITensorNetworks.contract(numerator_network)[] /
-    ITensorNetworks.contract(denominator_network)[]
-=======
     ITensors.contract(numerator_network)[] / ITensors.contract(denominator_network)[]
->>>>>>> upstream/main
 
   @test abs.(bp_szsz - actual_szsz) <= 0.05
 
@@ -136,11 +123,7 @@ ITensors.disable_warn_order()
   mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters=20)
 
   ψψsplit = split_index(ψψ, NamedEdge.([(v, 1) => (v, 2) for v in vs]))
-<<<<<<< HEAD
-  rdm = ITensorNetworks.contract(
-=======
   rdm = ITensors.contract(
->>>>>>> upstream/main
     approx_network_region(
       ψψ,
       mts,
@@ -187,13 +170,7 @@ ITensors.disable_warn_order()
 
   numerator_network = approx_network_region(ψψ, mts, [v]; verts_tn=ITensorNetwork(ψOψ[v]))
   denominator_network = approx_network_region(ψψ, mts, [v])
-<<<<<<< HEAD
-  bp_sz =
-    ITensorNetworks.contract(numerator_network)[] /
-    ITensorNetworks.contract(denominator_network)[]
-=======
   bp_sz = ITensors.contract(numerator_network)[] / ITensors.contract(denominator_network)[]
->>>>>>> upstream/main
 
   exact_sz =
     contract_boundary_mps(ψOψ; cutoff=1e-16) / contract_boundary_mps(ψψ; cutoff=1e-16)

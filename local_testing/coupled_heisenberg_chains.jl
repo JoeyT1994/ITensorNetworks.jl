@@ -290,7 +290,7 @@ function main(
   ny, nx = maximum(vertices(g))
   ITensors.disable_warn_order()
   calculate_GBP = true
-  use_periodicity = false
+  use_periodicity = true
   nxiters = use_periodicity ? 3 : nx
 
   ψ = ITensorNetwork(s, v -> if (v[2] + 2) % 3 == 0
@@ -354,9 +354,11 @@ function main(
     if calculate_GBP
       Z = partition(ψψ, group(v -> v[1][2], vertices(ψψ)))
       GBP_mts = message_tensors(Z)
-      GBP_mts = belief_propagation(ψψ, GBP_mts; contract_kwargs=(; alg="exact"))
-      Q2s_GBP[i + 1] = real(calculate_Q2(ψ, ψψ, GBP_mts; nxiters = 3))
-      Q3s_GBP[i + 1] = real(calculate_Q3(ψ, ψψ, GBP_mts; nxiters = 3))
+      GBP_mts = belief_propagation(ψψ, GBP_mts; niters=20, target_precision=1e-3, contract_kwargs=(; alg="exact"))
+      Q2s_GBP[i + 1] = real(calculate_Q2(ψ, ψψ, GBP_mts; nxiters))
+      Q3s_GBP[i + 1] = real(calculate_Q3(ψ, ψψ, GBP_mts; nxiters))
+
+      @show Q2s_GBP[i + 1], Q2s[i+1]
     end
 
     flush(stdout)
@@ -385,10 +387,10 @@ if length(ARGS) > 1
   Jperp = parse(Float64, ARGS[5])
   save = true
 else
-  nx, ny = 18, 2
+  nx, ny = 51, 2
   Jperp = 0.05
   χparr, χperp = 12, 12
-  save = true
+  save = false
 end
 
 g = grid_periodic_x(ny, nx)
