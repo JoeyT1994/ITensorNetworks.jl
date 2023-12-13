@@ -22,11 +22,20 @@ function message_tensors_skeleton(subgraphs::DataGraph)
 end
 
 function message_tensors(
+<<<<<<< HEAD
   subgraphs::DataGraph; itensor_constructor=x -> ITensor[dense(delta(i)) for i in x]
 )
   mts = message_tensors_skeleton(subgraphs)
   for e in edges(subgraphs)
     inds_e = [i for i in commoninds(subgraphs[src(e)], subgraphs[dst(e)])]
+=======
+  subgraphs::DataGraph;
+  itensor_constructor=inds_e -> ITensor[dense(delta(i)) for i in inds_e],
+)
+  mts = message_tensors_skeleton(subgraphs)
+  for e in edges(subgraphs)
+    inds_e = commoninds(subgraphs[src(e)], subgraphs[dst(e)])
+>>>>>>> upstream/main
     itensors = itensor_constructor(inds_e)
     mts[e] = ITensorNetwork(itensors)
     mts[reverse(e)] = dag(mts[e])
@@ -80,7 +89,11 @@ Do a sequential update of message tensors on `edges` for a given ITensornetwork 
 function belief_propagation_iteration(
   tn::ITensorNetwork,
   mts::DataGraph,
+<<<<<<< HEAD
   edges::Vector{E};
+=======
+  edges::Vector{<:AbstractEdge};
+>>>>>>> upstream/main
   contract_kwargs=(; alg="density_matrix", output_structure=path_graph_structure, maxdim=1),
   compute_norm=false,
 ) where {E<:NamedEdge}
@@ -107,15 +120,28 @@ function belief_propagation_iteration(
 end
 
 """
+<<<<<<< HEAD
 Do parallel updates between groups of edges of all message tensors for a given ITensornetwork and its partition into sub graphs
+=======
+Do parallel updates between groups of edges of all message tensors for a given ITensornetwork and its partition into sub graphs.
+Currently we send the full message tensor data struct to belief_propagation_iteration for each subgraph. But really we only need the
+mts relevant to that subgraph.
+>>>>>>> upstream/main
 """
 function belief_propagation_iteration(
   tn::ITensorNetwork,
   mts::DataGraph,
+<<<<<<< HEAD
   edge_groups::Vector{Vector{E}};
   contract_kwargs=(; alg="density_matrix", output_structure=path_graph_structure, maxdim=1),
   compute_norm=false,
 ) where {E<:NamedEdge}
+=======
+  edge_groups::Vector{<:Vector{<:AbstractEdge}};
+  contract_kwargs=(; alg="density_matrix", output_structure=path_graph_structure, maxdim=1),
+  compute_norm=false,
+)
+>>>>>>> upstream/main
   new_mts = copy(mts)
   c = 0
   for edges in edge_groups
@@ -135,10 +161,15 @@ function belief_propagation_iteration(
   mts::DataGraph;
   contract_kwargs=(; alg="density_matrix", output_structure=path_graph_structure, maxdim=1),
   compute_norm=false,
+<<<<<<< HEAD
   edges::Union{Vector{Vector{E}},Vector{E}}=belief_propagation_edge_sequence(
     undirected_graph(underlying_graph(mts))
   ),
 ) where {E<:NamedEdge}
+=======
+  edges=edge_sequence(mts),
+)
+>>>>>>> upstream/main
   return belief_propagation_iteration(tn, mts, edges; contract_kwargs, compute_norm)
 end
 
@@ -146,6 +177,7 @@ function belief_propagation(
   tn::ITensorNetwork,
   mts::DataGraph;
   contract_kwargs=(; alg="density_matrix", output_structure=path_graph_structure, maxdim=1),
+<<<<<<< HEAD
   niters=20,
   target_precision::Union{Float64,Nothing}=nothing,
   edges::Union{Vector{Vector{E}},Vector{E}}=belief_propagation_edge_sequence(
@@ -154,6 +186,17 @@ function belief_propagation(
   verbose=false,
 ) where {E<:NamedEdge}
   compute_norm = target_precision == nothing ? false : true
+=======
+  niters=default_bp_niters(mts),
+  target_precision=nothing,
+  edges=edge_sequence(mts),
+  verbose=false,
+)
+  compute_norm = !isnothing(target_precision)
+  if isnothing(niters)
+    error("You need to specify a number of iterations for BP!")
+  end
+>>>>>>> upstream/main
   for i in 1:niters
     mts, c = belief_propagation_iteration(tn, mts, edges; contract_kwargs, compute_norm)
     if compute_norm && c <= target_precision
@@ -172,8 +215,13 @@ function belief_propagation(
   nvertices_per_partition=nothing,
   npartitions=nothing,
   subgraph_vertices=nothing,
+<<<<<<< HEAD
   niters=20,
   target_precision::Union{Float64,Nothing}=nothing,
+=======
+  niters=default_bp_niters(mts),
+  target_precision=nothing,
+>>>>>>> upstream/main
   verbose=false,
 )
   mts = message_tensors(tn; nvertices_per_partition, npartitions, subgraph_vertices)

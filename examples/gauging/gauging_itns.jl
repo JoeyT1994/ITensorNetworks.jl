@@ -17,7 +17,8 @@ using ITensorNetworks:
   vidal_to_symmetric_gauge,
   initialize_bond_tensors,
   vidal_itn_isometries,
-  norm_network
+  norm_network,
+  edge_sequence
 
 using NamedGraphs
 using NamedGraphs: add_edges!, rem_vertex!, hexagonal_lattice_graph
@@ -46,7 +47,11 @@ end
 """Bring an ITN into the Vidal gauge, various methods possible. Result is timed"""
 function benchmark_state_gauging(
   ψ::ITensorNetwork;
+<<<<<<< HEAD
   mode="BeliefPropagation",
+=======
+  mode="belief_propagation",
+>>>>>>> upstream/main
   no_iterations=50,
   BP_update_order::String="sequential",
 )
@@ -68,19 +73,27 @@ function benchmark_state_gauging(
   for i in 1:no_iterations
     println("On Iteration " * string(i))
 
+<<<<<<< HEAD
     if mode == "BeliefPropagation"
+=======
+    if mode == "belief_propagation"
+>>>>>>> upstream/main
       if BP_update_order != "parallel"
         times_iters[i] = @elapsed mts, _ = belief_propagation_iteration(
           ψψ, mts; contract_kwargs=(; alg="exact")
         )
       else
         times_iters[i] = @elapsed mts, _ = belief_propagation_iteration(
+<<<<<<< HEAD
           ψψ, mts; contract_kwargs=(; alg="exact"), edges=[[e] for e in edges(mts)]
+=======
+          ψψ, mts; contract_kwargs=(; alg="exact"), edges=edge_sequence(mts; alg="parallel")
+>>>>>>> upstream/main
         )
       end
 
       times_gauging[i] = @elapsed ψ, bond_tensors = vidal_gauge(ψinit, mts)
-    elseif mode == "Eager"
+    elseif mode == "eager"
       times_iters[i] = @elapsed ψ, bond_tensors, mts = eager_gauging(ψ, bond_tensors, mts)
     else
       times_iters[i] = @elapsed begin
@@ -110,7 +123,11 @@ BPG_simulation_times, BPG_Cs = benchmark_state_gauging(
 BPG_sequential_simulation_times, BPG_sequential_Cs = benchmark_state_gauging(
   ψ; no_iterations
 )
+<<<<<<< HEAD
 Eager_simulation_times, Eager_Cs = benchmark_state_gauging(ψ; mode="Eager", no_iterations)
+=======
+Eager_simulation_times, Eager_Cs = benchmark_state_gauging(ψ; mode="eager", no_iterations)
+>>>>>>> upstream/main
 SU_simulation_times, SU_Cs = benchmark_state_gauging(ψ; mode="SU", no_iterations)
 
 epsilon = 1e-10

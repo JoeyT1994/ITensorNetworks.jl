@@ -35,9 +35,19 @@ function main()
     ψψ; subgraph_vertices=collect(values(group(v -> v[1], vertices(ψψ))))
   )
 
+<<<<<<< HEAD
   mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
 
   sz_bp = first(collect(values(expect_BP("Sz", ψ, ψψ, mts; vertices=[v]))))
+=======
+  mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters=20)
+
+  numerator_network = approx_network_region(
+    ψψ, mts, [(v, 1)]; verts_tn=ITensorNetwork([apply(op("Sz", s[v]), ψ[v])])
+  )
+  denominator_network = approx_network_region(ψψ, mts, [(v, 1)])
+  sz_bp = contract(numerator_network)[] / contract(denominator_network)[]
+>>>>>>> upstream/main
 
   println(
     "Simple Belief Propagation Gives Sz on Site " * string(v) * " as " * string(sz_bp)
@@ -50,8 +60,17 @@ function main()
   )
   Zpp = partition(ψψ; subgraph_vertices=nested_graph_leaf_vertices(Zp))
   mts = message_tensors(Zpp)
+<<<<<<< HEAD
   mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"))
   sz_bp = first(collect(values(expect_BP("Sz", ψ, ψψ, mts; vertices=[v]))))
+=======
+  mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), niters=20)
+  numerator_network = approx_network_region(
+    ψψ, mts, [(v, 1)]; verts_tn=ITensorNetwork([apply(op("Sz", s[v]), ψ[v])])
+  )
+  denominator_network = approx_network_region(ψψ, mts, [(v, 1)])
+  sz_bp = contract(numerator_network)[] / contract(denominator_network)[]
+>>>>>>> upstream/main
 
   println(
     "General Belief Propagation (4-site subgraphs) Gives Sz on Site " *
