@@ -25,7 +25,6 @@ using NPZ
 using Statistics
 
 using SplitApplyCombine
-using Plots
 
 using NamedGraphs: decorate_graph_edges
 

@@ -196,8 +196,8 @@ function gate_expect_beliefpropagation_V2(
   vs = vertices(s)[findall(i -> (length(commoninds(s[i], inds(o))) != 0), vertices(s))]
   vs_braket = [(v, 1) for v in vs]
 
-  #Oψ, _, _ = apply(o, ψ, ψψ, mts; reduced = false, normalize = false)
-  Oψ = apply(o , ψ; reduced = false)
+  #Oψ, _, _ = apply(o, ψ, ψψ, mts; reduced = true, normalize = false)
+  Oψ = apply(o , ψ; reduced = false, normalize = false)
   verts_tn=ITensorNetwork(ITensor[Oψ[v] for v in vs])
 
   numerator_network = approx_network_region(
@@ -287,7 +287,7 @@ function main(
     end
     time += dt
 
-    mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), target_precision=1e-3)
+    mts = belief_propagation(ψψ, mts; contract_kwargs=(; alg="exact"), target_precision=1e-3, niters = 30)
     Q1s[i + 1] = mean(collect(values(real.(expect_BP("Ntot", ψ, ψψ, mts)))))
     #Q2s[i + 1] = real(calculate_Q2(ψ, ψψ, mts; U))
     #Q3s[i + 1] = real(calculate_Q3(ψ, ψψ, mts))
@@ -301,10 +301,12 @@ function main(
 
   NupNdns = collect(values(real.(expect_BP("Nupdn", ψ, ψψ, mts))))
 
-  #f = ITensors.contract(ITensors.contract(dag(ψ)), ψ_sv)[] / sqrt(real(ITensors.contract(ITensors.contract(dag(ψ)), ITensors.contract(ψ))[])) 
-  #@show f*conj(f)
+  f = ITensors.contract(ITensors.contract(dag(ψ)), ψ_sv)[] / sqrt(real(ITensors.contract(ITensors.contract(dag(ψ)), ITensors.contract(ψ))[])) 
+  @show f*conj(f)
 
   E_hops = []
+  E_hops_corrected = []
+  E_hops_exact = []
   for i in 1:(nx-1)
     for j in 1:ny
       vsrc, vdst = (j,i), (j,i + 1)
@@ -312,9 +314,13 @@ function main(
         1.0 * op("Cup", s[vsrc]) * op("Cdagup", s[vdst]) -
         1.0 * op("Cdagdn", s[vsrc]) * op("Cdn", s[vdst]) +
         1.0 * op("Cdn", s[vsrc]) * op("Cdagdn", s[vdst])
+      @show inds(gate)
       E_hop = gate_expect_beliefpropagation_V2(gate, ψ, ψψ, mts)
+      append!(E_hops_exact, exact_state_vector(ψ_sv, gate))
       if real(E_hop) > 0.0
-        E_hop = -1.0 * E_hop
+        append!(E_hops_corrected, -1.0*E_hop)
+      else
+        append!(E_hops_corrected, 1.0*E_hop)
       end
       append!(E_hops, E_hop)
     end
@@ -322,8 +328,12 @@ function main(
   #@show real(calculate_Q2(ψ, ψψ, mts; U))
   E_U = U*sum(NupNdns)
   E_hop = sum(E_hops)
+  E_hop_corrected = sum(E_hops_corrected)
+  E_hop_exact = sum(E_hops_exact)
   println("Energy stemming from Doublon Occupation is $E_U")
   println("Energy stemming from Hopping is $E_hop")
+  println("Energy stemming from Hopping (Corrected) is $E_hop_corrected")
+  println("Energy stemming from Hopping (Exact) is $E_hop_exact")
 
   ΔQ1 = abs(Q1s[length(time_steps) + 1] - Q1s[1])
   ΔQ2 = abs(Q2s[length(time_steps) + 1] - Q2s[1])
@@ -345,16 +355,16 @@ if length(ARGS) > 1
   U = parse(Float64, ARGS[6])
   save = true
 else
-  nx, ny =6, 2
+  nx, ny =4, 1
   tperp = 0.0
   U = 3.0
-  χparr, χperp = 16, 4
+  χparr, χperp = 256,1
 end
 
 #g = grid_periodic_x(ny, nx)
 g = named_grid((ny, nx))
 
-time_steps = [0.01 for i in 1:50]
+time_steps = [0.05 for i in 1:50]
 
 @show χparr, χperp
 flush(stdout)
