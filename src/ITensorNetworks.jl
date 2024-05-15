@@ -1,5 +1,6 @@
 module ITensorNetworks
 include("lib/BaseExtensions/src/BaseExtensions.jl")
+include("lib/GraphsExtensions/src/GraphsExtensions.jl")
 include("lib/ITensorsExtensions/src/ITensorsExtensions.jl")
 include("visualize.jl")
 include("graphs.jl")
