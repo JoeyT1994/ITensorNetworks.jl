@@ -78,13 +78,13 @@ end
 """
 Random field J1-J2 Heisenberg model on a general graph
 """
-function heisenberg(g::AbstractGraph; J1=1, J2=0, h=0)
+function heisenberg(g::AbstractGraph; J1=1, J2=0, h=0, Δ=1)
   (; J1, J2, h) = map(to_callable, (; J1, J2, h))
   ℋ = OpSum()
   for e in edges(g)
     ℋ += J1(e) / 2, "S+", src(e), "S-", dst(e)
     ℋ += J1(e) / 2, "S-", src(e), "S+", dst(e)
-    ℋ += J1(e), "Sz", src(e), "Sz", dst(e)
+    ℋ += J1(e) * Δ, "Sz", src(e), "Sz", dst(e)
   end
   for v in vertices(g)
     for nn in next_nearest_neighbors(g, v)
@@ -96,6 +96,17 @@ function heisenberg(g::AbstractGraph; J1=1, J2=0, h=0)
   end
   for v in vertices(g)
     ℋ += h(v), "Sz", v
+  end
+  return ℋ
+end
+
+function xyz(g::AbstractGraph; Jx=1, Jy=1, Jz=1)
+  (; Jx, Jy, Jz) = map(to_callable, (; Jx, Jy, Jz))
+  ℋ = OpSum()
+  for e in edges(g)
+    ℋ += Jx(e), "Sx", src(e), "Sx", dst(e)
+    ℋ += Jy(e), "Sy", src(e), "Sy", dst(e)
+    ℋ += Jz(e), "Sz", src(e), "Sz", dst(e)
   end
   return ℋ
 end

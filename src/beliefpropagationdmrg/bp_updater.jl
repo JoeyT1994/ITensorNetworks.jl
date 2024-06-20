@@ -1,9 +1,10 @@
 using ITensors: contract
 using ITensors.ContractionSequenceOptimization: optimal_contraction_sequence
-using KrylovKit: eigsolve
+using KrylovKit: eigsolve, geneigsolve
+using LinearAlgebra: norm_sqr
 
 function default_krylov_kwargs()
-  return (; tol=1e-15, krylovdim=20, maxiter=2, verbosity=0, eager=false, ishermitian=true)
+  return (; tol=1e-14, krylovdim=20, maxiter=5, verbosity=0, eager=false, ishermitian=true)
 end
 
 #TODO: Put inv_sqrt_mts onto ∂ψOψ_bpc_∂r beforehand. Need to do this in an efficient way without
@@ -21,7 +22,7 @@ function get_new_state(
     (∂ψOψ_bpc_∂r, sequence) in zip(∂ψOψ_bpc_∂rs, sequences)
   ]
   state = reduce(+, states)
-  return dag(noprime(contract([state; (inv_sqrt_mts)])))
+  return noprime(contract([state; (inv_sqrt_mts)]))
 end
 
 function bp_eigsolve_updater(
@@ -32,15 +33,16 @@ function bp_eigsolve_updater(
   krylov_kwargs=default_krylov_kwargs(),
 )
   gauged_init = noprime(contract([copy(init); sqrt_mts]))
-  sequences = [
-    optimal_contraction_sequence([gauged_init; ∂ψOψ_bpc_∂r]) for ∂ψOψ_bpc_∂r in ∂ψOψ_bpc_∂rs
-  ]
+  gauged_init /= norm(gauged_init)
+  sequences =  [optimal_contraction_sequence([gauged_init; ∂ψOψ_bpc_∂r]) for ∂ψOψ_bpc_∂r in ∂ψOψ_bpc_∂rs]
   get_new_state_ =
     state -> get_new_state(∂ψOψ_bpc_∂rs, inv_sqrt_mts, sqrt_mts, state; sequences)
   howmany = 1
 
   vals, vecs, info = eigsolve(get_new_state_, gauged_init, howmany, :SR; krylov_kwargs...)
-  state = noprime(contract([first(vecs); inv_sqrt_mts]))
+  state = first(vecs)
+  final_energy = first(vals)
+  state = noprime(contract([state; inv_sqrt_mts]))
 
-  return state, first(vals)
+  return state, final_energy
 end
