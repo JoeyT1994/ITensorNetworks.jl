@@ -1,4 +1,4 @@
-using ITensors: siteinds, Op, prime, OpSum, apply, Trotter
+using ITensors: siteinds, Op, prime, OpSum, apply, Trotter, combiner
 using Graphs: AbstractGraph, SimpleGraph, edges, vertices, is_tree, connected_components
 using NamedGraphs: NamedGraph, NamedEdge, NamedGraphs, rename_vertices
 using NamedGraphs.NamedGraphGenerators: named_grid, named_hexagonal_lattice_graph
@@ -50,9 +50,10 @@ using ITensors:
   delta,
   replaceinds,
   dense
-using ITensors.NDTensors: denseblocks
+using ITensors.NDTensors: denseblocks, array
 using Dictionaries: set!
 using SplitApplyCombine: group
+using LinearAlgebra: eigvals
 
 function BP_apply(
   o::ITensor, ψ::AbstractITensorNetwork, bpc::BeliefPropagationCache; reset_all_messages = false, apply_kwargs...

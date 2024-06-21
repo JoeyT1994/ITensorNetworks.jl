@@ -35,7 +35,9 @@ function optimise(H::OpSum, new_tensor::ITensor, old_tensor::ITensor, ψ_old::IT
   end
 
   println("Couldn't improve sol.")
-  return ψ_old, ψIψ_bpc_old, prev_energy
+  println("Solution not found!")
+  ψ_new, ψIψ_bpc_new = bp_inserter(ψ_old, ψIψ_bpc_old, old_tensor, sqrt_mts, inv_sqrt_mts, region; bp_update_kwargs, inserter_kwargs...)
+  return ψ_new, ψIψ_bpc_new, prev_energy
 end
 
 function renormalize_update_norm_cache(
