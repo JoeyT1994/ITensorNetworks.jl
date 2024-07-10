@@ -30,13 +30,15 @@ function bp_eigsolve_updater(
   ∂ψOψ_bpc_∂rs::Vector,
   sqrt_mts,
   inv_sqrt_mts;
+  enforce_real=false,
   krylov_kwargs=default_krylov_kwargs(),
 )
   gauged_init = noprime(contract([copy(init); sqrt_mts]))
   gauged_init /= norm(gauged_init)
   sequences =  [optimal_contraction_sequence([gauged_init; ∂ψOψ_bpc_∂r]) for ∂ψOψ_bpc_∂r in ∂ψOψ_bpc_∂rs]
   get_new_state_ =
-    state -> get_new_state(∂ψOψ_bpc_∂rs, inv_sqrt_mts, sqrt_mts, state; sequences)
+  
+  state -> get_new_state(∂ψOψ_bpc_∂rs, inv_sqrt_mts, sqrt_mts, state; sequences)
   howmany = 1
 
   vals, vecs, info = eigsolve(get_new_state_, gauged_init, howmany, :SR; krylov_kwargs...)
@@ -44,6 +46,9 @@ function bp_eigsolve_updater(
   final_energy = first(vals)
   state = noprime(contract([state; inv_sqrt_mts]))
 
+  if enforce_real
+    state = real.(state)
+  end
   return state, final_energy
 end
 
@@ -68,6 +73,7 @@ function bp_eigsolve_updater_V2(
     state -> get_new_state(∂ψOψ_bpc_∂rs, inv_sqrt_mts, sqrt_mts, state; sequences)
   howmany = 1
 
+  L = length(vertices(ψ))
   vals, vecs, info = eigsolve(get_new_state_, gauged_init, 1, :SR; krylov_kwargs...)
   new_state = first(vecs)
   new_state = noprime(contract([new_state; inv_sqrt_mts]))

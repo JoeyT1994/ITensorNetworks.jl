@@ -100,13 +100,48 @@ function heisenberg(g::AbstractGraph; J1=1, J2=0, h=0, Δ=1)
   return ℋ
 end
 
-function xyz(g::AbstractGraph; Jx=1, Jy=1, Jz=1)
-  (; Jx, Jy, Jz) = map(to_callable, (; Jx, Jy, Jz))
+function xyz(g::AbstractGraph; Jx=1, Jy=1, Jz=1, hx = 1, hy = 1, hz = 1)
+  (; Jx, Jy, Jz, hx, hy, hz) = map(to_callable, (; Jx, Jy, Jz, hx, hy, hz))
   ℋ = OpSum()
   for e in edges(g)
     ℋ += Jx(e), "Sx", src(e), "Sx", dst(e)
     ℋ += Jy(e), "Sy", src(e), "Sy", dst(e)
     ℋ += Jz(e), "Sz", src(e), "Sz", dst(e)
+  end
+
+  for v in vertices(g)
+    ℋ += hx(v), "Sx", v
+    ℋ += hy(v), "Sy", v
+    ℋ += hz(v), "Sz", v
+  end
+  return ℋ
+end
+
+function xyzkitaev(g::AbstractGraph; Jx=1, Jy=1, Jz=1, hx = 1, hy = 1, hz = 1, K = 0, kitaev_terms = nothing)
+  (; Jx, Jy, Jz, hx, hy, hz) = map(to_callable, (; Jx, Jy, Jz, hx, hy, hz))
+  ℋ = OpSum()
+  for e in edges(g)
+    ℋ += Jx(e), "Sx", src(e), "Sx", dst(e)
+    ℋ += Jy(e), "Sy", src(e), "Sy", dst(e)
+    ℋ += Jz(e), "Sz", src(e), "Sz", dst(e)
+  end
+
+  for v in vertices(g)
+    ℋ += hx(v), "Sx", v
+    ℋ += hy(v), "Sy", v
+    ℋ += hz(v), "Sz", v
+  end
+
+  if !isnothing(kitaev_terms)
+    for term in kitaev_terms
+      if term[2] == "KX"
+        ℋ += K, "Sx", (term[3], ), "Sx", (term[4], )
+      elseif term[2] == "KY"
+        ℋ += K, "Sy", (term[3], ), "Sy", (term[4], )
+      elseif term[2] == "KZ"
+        ℋ += K, "Sz", (term[3], ), "Sz", (term[4], )
+      end
+    end
   end
   return ℋ
 end

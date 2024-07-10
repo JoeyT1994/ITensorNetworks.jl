@@ -22,6 +22,7 @@ using ITensorNetworks:
   IndsNetwork,
   ITensorNetwork,
   insert_linkinds,
+  contraction_sequence,
   ttn,
   union_all_inds,
   neighbor_vertices,
@@ -54,6 +55,7 @@ using ITensors.NDTensors: denseblocks, array
 using Dictionaries: set!
 using SplitApplyCombine: group
 using LinearAlgebra: eigvals
+using OMEinsumContractionOrders: OMEinsumContractionOrders
 
 function BP_apply(
   o::ITensor, ψ::AbstractITensorNetwork, bpc::BeliefPropagationCache; reset_all_messages = false, apply_kwargs...
@@ -108,6 +110,13 @@ function heavy_hex_lattice_graph(n::Int64, m::Int64; periodic)
     g = named_hexagonal_lattice_graph(n, m; periodic)
     g = decorate_graph_edges(g)
     return renamer(g)
+end
+
+function lieb_lattice_graph(n::Int64, m::Int64; periodic)
+  """Create lieb lattice geometry"""
+  g = named_grid((n, m); periodic)
+  g = decorate_graph_edges(g)
+  return renamer(g)
 end
 
 function contract_heavy_hex_state(ψ::ITensorNetwork)
@@ -199,38 +208,7 @@ function graph_to_adj_mat(g::AbstractGraph)
   return adj_mat
 end
 
-function ising_adjmat(L, adj_mat; J, h, hl)
-  os = OpSum()
-  for i in 1:L
-      for j in (i+1):L
-          if !iszero(J * adj_mat[i, j])
-              os += J * adj_mat[i, j], "Sz", i, "Sz", j
-          end
-      end
-  end
-  for i in 1:L
-    os += h, "Sx", i
-    os += hl, "Sz", i
-  end
-
-  return os
-end
-
-function heisenberg_adjmat(L, adj_mat; J = 1, Δ=1)
-  os = OpSum()
-  for i in 1:L
-      for j in (i+1):L
-          if !iszero(J * adj_mat[i, j])
-              os += J * adj_mat[i, j] / 2, "S+", i, "S-", j
-              os += J * adj_mat[i, j] / 2, "S-", i, "S+", j
-              os += J * adj_mat[i, j] * Δ, "Sz", i, "Sz", j
-          end
-      end
-  end
-  return os
-end
-
-function xyz_adjmat(L, adj_mat; Jx = 1, Jy = 1, Jz = 1)
+function xyz_adjmat(L, adj_mat; Jx = 1, Jy = 1, Jz = 1, hx = 0, hy = 0, hz = 0)
   os = OpSum()
   for i in 1:L
       for j in (i+1):L
@@ -244,6 +222,18 @@ function xyz_adjmat(L, adj_mat; Jx = 1, Jy = 1, Jz = 1)
             os += Jz * adj_mat[i, j], "Sz", i, "Sz", j
           end
       end
+  end
+
+  for i in 1:L
+    if !iszero(hx)
+      os += hx, "Sx", i
+    end
+    if !iszero(hy)
+      os += hy, "Sy", i
+    end
+    if !iszero(hz)
+      os += hz, "Sz", i
+    end
   end
   return os
 end
@@ -296,4 +286,54 @@ function filter_zero_terms(H::OpSum)
     end
   end
   return new_H
+end
+
+function graph_parser(graph_string; params)
+  if graph_string == "HYPERHONEYCOMB"
+    L = params["L"]
+    file = "/Users/jtindall/Files/Data/BPDMRG/TOMLS/hyperhoneycomb."*string(L)*".pbc.HB.Kitaev.nosyminfo.toml"
+    data = TOML.parsefile(file)
+    interactions = data["Interactions"]
+    heisenberg_interactions = filter(d -> first(d) == "HB", interactions)
+    kitaev_interactions = filter(d -> occursin("KITAEV", first(d)), interactions)
+    g = build_graph_from_interactions(heisenberg_interactions)
+    file_string = "HYPERHONEYCOMBL"*string(L)
+    return g, file_string, kitaev_interactions
+  elseif graph_string == "RING"
+    L = params["L"]
+    g = named_grid((L, 1); periodic = true)
+    file_string = "RINGL"*string(L)
+  elseif graph_string == "HEAVYHEX"
+    nx, ny = params["nx"], params["ny"]
+    g = heavy_hex_lattice_graph(nx, ny; periodic = true)
+    file_string = "HEAVYHEXNX"*string(nx)*"NY"*string(ny)
+  elseif graph_string == "HEXAGONAL"
+    nx, ny = params["nx"], params["ny"]
+    g = named_hexagonal_lattice_graph(nx, ny; periodic = true)
+    file_string = "HEXNX"*string(nx)*"NY"*string(ny)
+  end
+  return g, file_string
+end
+
+function get_local_term(qf::QuadraticFormNetwork, v)
+  return qf[operator_vertex(qf, v)]*qf[bra_vertex(qf, v)]*qf[ket_vertex(qf, v)]
+end
+
+function exact_energy(ψ::AbstractITensorNetwork, H::OpSum)
+  s = indsnetwork(ψ)
+  region = [first(vertices(ψ))]
+  operators = get_tnos(s, H, region)
+  qfs = QuadraticFormNetwork.(operators, (ψ,))
+  e = 0
+  norm_network = QuadraticFormNetwork(ψ)
+  z_tn = ITensorNetwork([get_local_term(norm_network, v) for v in vertices(ψ)])
+  z_seq = contraction_sequence(z_tn; alg="tree_sa")
+  z = contract(z_tn; sequence =z_seq)[]
+
+  for qf in qfs
+    qf_tn = ITensorNetwork([get_local_term(qf, v) for v in vertices(ψ)])
+    qf_seq = contraction_sequence(qf_tn; alg ="tree_sa")
+    e += contract(qf_tn; sequence = qf_seq)[]
+  end
+  return e / z
 end

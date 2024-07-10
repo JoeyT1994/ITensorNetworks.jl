@@ -12,19 +12,25 @@ using NamedGraphs.PartitionedGraphs:
   partitionedges,
   unpartitioned_graph
 using SimpleTraits: SimpleTraits, Not, @traitfn
+using LinearAlgebra: dot
+using ITensorNetworks.ITensorsExtensions: map_eigvals
 
-default_message(inds_e) = ITensor[denseblocks(delta(i)) for i in inds_e]
-#default_message(inds_e) = ITensor[denseblocks(delta(inds_e))]  
+function make_posdef(A::ITensor)
+  return map_eigvals(x -> real(x), A, first(inds(A)), last(inds(A)); ishermitian = true)
+end
+
+#default_message(scalartype, inds_e) = ITensor[denseblocks(delta(scalartype, i)) for i in inds_e]
+default_message(scalartype, inds_e) = ITensor[denseblocks(delta(scalartype, inds_e))] 
 default_messages(ptn::PartitionedGraph) = Dictionary()
 default_message_norm(m::ITensor) = norm(m)
 function default_message_update(contract_list::Vector{ITensor}; normalize=true, kwargs...)
   sequence = optimal_contraction_sequence(contract_list)
-  updated_messages = contract(contract_list; sequence, kwargs...)
-  message_norm = norm(updated_messages)
+  updated_message = contract(contract_list; sequence, kwargs...)
+  message_norm = norm(updated_message)
   if !iszero(message_norm) && normalize
-    updated_messages /= message_norm
+    updated_message /= message_norm
   end
-  return ITensor[updated_messages]
+  return ITensor[updated_message]
 end
 @traitfn default_bp_maxiter(g::::(!IsDirected)) = is_tree(g) ? 1 : nothing
 @traitfn function default_bp_maxiter(g::::IsDirected)
@@ -43,8 +49,8 @@ function message_diff(
   message_a::Vector{ITensor}, message_b::Vector{ITensor}; message_norm=default_message_norm
 )
   lhs, rhs = contract(message_a), contract(message_b)
-  norm_lhs, norm_rhs = message_norm(lhs), message_norm(rhs)
-  return 0.5 * norm((denseblocks(lhs) / norm_lhs) - (denseblocks(rhs) / norm_rhs))
+  f = abs2(dot(lhs / norm(lhs), rhs / norm(rhs)))
+  return abs(1 - f)
 end
 
 struct BeliefPropagationCache{PTN,MTS,DM}
@@ -100,8 +106,10 @@ for f in [
   end
 end
 
+NDTensors.scalartype(bp_cache::BeliefPropagationCache) = scalartype(tensornetwork(bp_cache))
+
 function default_message(bp_cache::BeliefPropagationCache, edge::PartitionEdge)
-  return default_message(bp_cache)(linkinds(bp_cache, edge))
+  return default_message(bp_cache)(scalartype(bp_cache), linkinds(bp_cache, edge))
 end
 
 function message(bp_cache::BeliefPropagationCache, edge::PartitionEdge)
@@ -203,7 +211,7 @@ function update(
   for e in edges
     set!(mts, e, update_message(bp_cache_updated, e; kwargs...))
     if !isnothing(update_diff!)
-      update_diff![] += message_diff(message(bp_cache, e), mts[e])
+      update_diff![] += message_diff(message(bp_cache, e), message(bp_cache_updated, e))
     end
   end
   return bp_cache_updated
@@ -230,10 +238,20 @@ function update(
   for edges in edge_groups
     bp_cache_t = update(bp_cache, edges; kwargs...)
     for e in edges
-      new_mts[e] = message(bp_cache_t, e)
+      set!(new_mts, e, message(bp_cache_t, e))
     end
   end
   return set_messages(bp_cache, new_mts)
+end
+
+function make_messages_posdef(bpc::BeliefPropagationCache)
+  bpc = copy(bpc)
+  ms = messages(bpc)
+  for pe in partitionedges(partitioned_tensornetwork(bpc))
+    set!(ms, pe, make_posdef.(message(bpc, pe)))
+    set!(ms, reverse(pe), make_posdef.(message(bpc, reverse(pe))))
+  end
+  return bpc
 end
 
 """
@@ -245,6 +263,7 @@ function update(
   maxiter=default_bp_maxiter(bp_cache),
   tol=nothing,
   verbose=false,
+  makeposdeffreq = nothing,
   kwargs...,
 )
   compute_error = !isnothing(tol)
@@ -254,7 +273,10 @@ function update(
   for i in 1:maxiter
     diff = compute_error ? Ref(0.0) : nothing
     bp_cache = update(bp_cache, edges; (update_diff!)=diff, kwargs...)
-    if compute_error && (diff.x / length(edges)) <= tol
+    if !isnothing(makeposdeffreq) && i % makeposdeffreq == 0 
+      bp_cache = make_messages_posdef(bp_cache)
+    end
+    if compute_error && abs(diff.x / length(edges)) <= tol
       if verbose
         println("BP converged to desired precision after $i iterations.")
       end
@@ -327,15 +349,29 @@ function ITensors.scalar(bp_cache::BeliefPropagationCache)
   return prod(v_scalars) / prod(e_scalars)
 end
 
-#Renormalize all messages such that <m_{e}m_{reverse(e)}> = 1 on all edges
-function renormalize_messages(bp_cache::BeliefPropagationCache)
+function normalize_messages(bp_cache::BeliefPropagationCache, pes::Vector{<:PartitionEdge})
   bp_cache = copy(bp_cache)
   mts = messages(bp_cache)
-  for pe in partitionedges(partitioned_tensornetwork(bp_cache))
-    n = region_scalar(bp_cache, pe)
+  for pe in pes
     me, mer = only(mts[pe]), only(mts[reverse(pe)])
-    set!(mts, pe, ITensor[(1 / sqrt(n)) * me])
-    set!(mts, reverse(pe), ITensor[(1 / sqrt(n)) * mer])
+    me /= norm(me)
+    mer /= norm(mer)
+    n = dot(me, mer)
+    if isa(n, Float64) && n < 0 
+      set!(mts, pe, ITensor[(-1 / sqrt(abs(n))) * me])
+      set!(mts, reverse(pe), ITensor[(1 / sqrt(abs(n))) * mer])
+    else
+      set!(mts, pe, ITensor[(1 / sqrt(n)) * me])
+      set!(mts, reverse(pe), ITensor[(1 / sqrt(n)) * mer])
+    end
   end
   return bp_cache
+end
+
+function normalize_message(bp_cache::BeliefPropagationCache, pe::PartitionEdge)
+  return normalize_messages(bp_cache, PartitionEdge[pe])
+end
+
+function normalize_messages(bp_cache::BeliefPropagationCache)
+  return normalize_messages(bp_cache, partitionedges(partitioned_tensornetwork(bp_cache)))
 end

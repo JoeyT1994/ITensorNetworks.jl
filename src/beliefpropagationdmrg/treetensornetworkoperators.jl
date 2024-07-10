@@ -2,6 +2,7 @@ using NamedGraphs: edges
 using NamedGraphs.NamedGraphGenerators: named_grid
 using NamedGraphs.GraphsExtensions: forest_cover, default_root_vertex, vertices, dfs_tree, undirected_graph,
     bfs_tree
+using ITensorNetworks: IndsNetwork
 
 function opsum_to_edge_term_dict(s::IndsNetwork, H::OpSum)
     es = edges(s)
@@ -28,8 +29,10 @@ using NamedGraphs.NamedGraphGenerators: named_grid
 using NamedGraphs.GraphsExtensions: forest_cover, default_root_vertex, vertices, dfs_tree, undirected_graph,
     bfs_tree, neighbors, dst, src, rem_edges, is_tree
 
-function BFS_prioritise_edges(g, start_vertex, priority_edges)
+function BFS_prioritise_edges(g, start_region, priority_edges)
+    start_vertex = first(start_region)
     Q = NamedEdge[NamedEdge(start_vertex => vn) for vn in neighbors(g, start_vertex)]
+    Q = sort(Q; by = e -> dst(e) ∉ start_region)
     explored_vertices = [start_vertex]
     edges_traversed = edgetype(g)[]
     while length(vertices(g)) != length(explored_vertices)
@@ -57,12 +60,12 @@ function BFS_prioritise_edges(g, start_vertex, priority_edges)
     return edges_traversed
 end
 
-function spanning_trees(g, start_vertex)
+function spanning_trees(g, start_region)
     edges_covered = NamedEdge[]
     priority_edges = NamedEdge[]
     ts = NamedGraph[]
     while length(edges_covered) != length(edges(g))
-        t = BFS_prioritise_edges(g, start_vertex, priority_edges)
+        t = BFS_prioritise_edges(g, start_region, priority_edges)
         append!(edges_covered, t)
         edges_covered = unique(edges_covered)
         tree = copy(g)
@@ -74,8 +77,8 @@ function spanning_trees(g, start_vertex)
     return ts
 end
 
-function get_tnos(s::IndsNetwork, H::OpSum, vert)
-    ts = spanning_trees(underlying_graph(s), vert)
+function get_tnos(s::IndsNetwork, H::OpSum, start_region)
+    ts = spanning_trees(underlying_graph(s), start_region)
     H_dict = opsum_to_edge_term_dict(s, H)
     tnos = ITensorNetwork[]
     for t in ts

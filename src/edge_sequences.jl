@@ -10,6 +10,10 @@ function default_edge_sequence(pg::PartitionedGraph)
   return PartitionEdge.(edge_sequence(partitioned_graph(pg)))
 end
 
+function parallel_edge_sequence(pg::PartitionedGraph)
+  return [PartitionEdge.(e) for e in edge_sequence(partitioned_graph(pg); alg = "parallel")]
+end
+
 @traitfn function edge_sequence(
   g::::(!IsDirected); alg=default_edge_sequence_alg(), kwargs...
 )
