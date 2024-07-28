@@ -326,14 +326,14 @@ function exact_energy(ψ::AbstractITensorNetwork, H::OpSum)
   qfs = QuadraticFormNetwork.(operators, (ψ,))
   e = 0
   norm_network = QuadraticFormNetwork(ψ)
-  z_tn = ITensorNetwork([get_local_term(norm_network, v) for v in vertices(ψ)])
-  z_seq = contraction_sequence(z_tn; alg="tree_sa")
-  z = contract(z_tn; sequence =z_seq)[]
+  #z_tn = ITensorNetwork([get_local_term(norm_network, v) for v in vertices(ψ)])
+  z_seq = contraction_sequence(norm_network; alg="tree_sa")
+  z = contract(norm_network; sequence =z_seq)[]
 
   for qf in qfs
-    qf_tn = ITensorNetwork([get_local_term(qf, v) for v in vertices(ψ)])
-    qf_seq = contraction_sequence(qf_tn; alg ="tree_sa")
-    e += contract(qf_tn; sequence = qf_seq)[]
+    #qf_tn = ITensorNetwork([get_local_term(qf, v) for v in vertices(ψ)])
+    qf_seq = contraction_sequence(qf; alg ="tree_sa")
+    e += contract(qf; sequence = qf_seq)[]
   end
   return e / z
 end

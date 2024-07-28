@@ -10,7 +10,7 @@ using NPZ
 include("bp_dmrg.jl")
 include("utils.jl")
 
-graph_params = Dictionary(["L"], [32])
+graph_params = Dictionary(["L"], [128])
 #graph_params = Dictionary(["nx", "ny"], [4, 4])
 g, file_string, kitaev_terms = graph_parser("HYPERHONEYCOMB"; params = graph_params)
 L = length(vertices(g))
@@ -26,7 +26,7 @@ Random.seed!(1234)
 s = siteinds("S=1/2", g)
 bp_update_kwargs= (; maxiter=30, tol=1e-9, makeposdeffreq =1)
 
-χ = 4
+χ = 3
 model_params = (; Jx, Jy, Jz, hx, hy, hz, K)
 #H = xyz(s; model_params...)
 H = xyzkitaev(s; kitaev_terms, model_params...)

@@ -114,7 +114,7 @@ end
 
 function message(bp_cache::BeliefPropagationCache, edge::PartitionEdge)
   mts = messages(bp_cache)
-  return get(mts, edge, default_message(bp_cache, edge))
+  return get(() -> default_message(bp_cache, edge), mts, edge)
 end
 function messages(bp_cache::BeliefPropagationCache, edges; kwargs...)
   return map(edge -> message(bp_cache, edge; kwargs...), edges)

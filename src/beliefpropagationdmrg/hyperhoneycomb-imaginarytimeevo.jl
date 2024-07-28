@@ -17,13 +17,13 @@ s = siteinds("S=1/2", g; conserve_qns = true)
 L = length(vertices(g))
 Jx, Jy, Jz = 1.0, 1.0, 1.0
 hx, hy, hz = 0.0, 0.0, 0.0
-K = 1
+K = 0
 
-χ = 2
+χ = 5
 s = siteinds("S=1/2", g)
 model_params = (; Jx, Jy, Jz, hx, hy, hz, K, kitaev_terms)
 dbetas = [(100, 0.1), (100, 0.05), (100, 0.025), (100, 0.01)]
-bp_update_kwargs= (; maxiter=25, tol=1e-8, makeposdeffreq = 5)
+bp_update_kwargs= (; maxiter=25, tol=1e-8, makeposdeffreq = 10)
 apply_kwargs= (; cutoff=1e-14, maxdim=χ)
 
 ψ0 = random_tensornetwork(s; link_space = 1)
