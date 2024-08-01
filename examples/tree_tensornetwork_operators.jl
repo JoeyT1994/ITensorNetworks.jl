@@ -3,7 +3,7 @@ using NamedGraphs.NamedGraphGenerators: named_grid
 using NamedGraphs.GraphsExtensions: forest_cover, default_root_vertex, vertices, dfs_tree, undirected_graph,
     bfs_tree, add_edges, post_order_dfs_edges
 
-using ITensorNetworks: IndsNetwork, underlying_graph, ttn, indsnetwork
+using ITensorNetworks: IndsNetwork, underlying_graph, ttn, indsnetwork, default_message_update
 using ITensors: OpSum, sites
 
 function opsum_to_edge_term_dict(s::IndsNetwork, H::OpSum)
@@ -31,8 +31,10 @@ using NamedGraphs.NamedGraphGenerators: named_grid
 using NamedGraphs.GraphsExtensions: forest_cover, default_root_vertex, vertices, dfs_tree, undirected_graph,
     bfs_tree, neighbors, dst, src, rem_edges, is_tree
 
-function BFS_prioritise_edges(g, start_vertex, priority_edges)
+function BFS_prioritise_edges(g, start_region, priority_edges)
+    start_vertex = first(start_region)
     Q = NamedEdge[NamedEdge(start_vertex => vn) for vn in neighbors(g, start_vertex)]
+    Q = sort(Q; by = e -> dst(e) ∉ start_region)
     explored_vertices = [start_vertex]
     edges_traversed = edgetype(g)[]
     while length(vertices(g)) != length(explored_vertices)
@@ -60,12 +62,12 @@ function BFS_prioritise_edges(g, start_vertex, priority_edges)
     return edges_traversed
 end
 
-function spanning_trees(g, start_vertex)
+function spanning_trees(g, start_region)
     edges_covered = NamedEdge[]
     priority_edges = NamedEdge[]
     ts = NamedGraph[]
     while length(edges_covered) != length(edges(g))
-        t = BFS_prioritise_edges(g, start_vertex, priority_edges)
+        t = BFS_prioritise_edges(g, start_region, priority_edges)
         append!(edges_covered, t)
         edges_covered = unique(edges_covered)
         tree = copy(g)
@@ -77,8 +79,8 @@ function spanning_trees(g, start_vertex)
     return ts
 end
 
-function get_tnos(s::IndsNetwork, H::OpSum, vert)
-    ts = spanning_trees(underlying_graph(s), vert)
+function get_tnos(s::IndsNetwork, H::OpSum, start_region)
+    ts = spanning_trees(underlying_graph(s), start_region)
     H_dict = opsum_to_edge_term_dict(s, H)
     tnos = ITensorNetwork[]
     for t in ts
@@ -118,10 +120,49 @@ function effective_environments(state::ITensorNetwork, H::OpSum, ψIψ_bpc::Beli
   
       partition_edge_sequence = PartitionEdge.(post_order_dfs_edges(underlying_graph(operator), first(region)))
       partition_edge_sequence = filter(e -> src(e) ∉ PartitionVertex.(region), partition_edge_sequence)
-      ψOψ_bpc = update(ψOψ_bpc, partition_edge_sequence; message_update = mts -> default_message_update(mts; normalize = false))
-      ψIψ_bpc = update(ψIψ_bpc, partition_edge_sequence; message_update = mts -> default_message_update(mts; normalize = false))
+      ψOψ_bpc = update(ψOψ_bpc, partition_edge_sequence; message_update = ms -> default_message_update(ms; normalize = false))
+      ψIψ_bpc = update(ψIψ_bpc, partition_edge_sequence; message_update = ms -> default_message_update(ms; normalize = false))
       e_region = vcat([bra_vertex(ψOψ_qf, v) for v in region], [ket_vertex(ψOψ_qf, v) for v in region])
       push!(environments, environment(ψOψ_bpc, e_region))      
     end
     return environments
-  end
+end
+
+function effective_environments_enlarged_region(state::ITensorNetwork, H::OpSum, ψIψ_bpc::BeliefPropagationCache, region,
+    central_vert)
+    s = indsnetwork(state)
+    @assert central_vert ∈ region
+  
+    operators = get_tnos(s, H, region)
+    environments = Vector{ITensor}[]
+    for operator in operators
+      ψOψ_qf = QuadraticFormNetwork(operator, state)
+      ψOψ_bpc = BeliefPropagationCache(ψOψ_qf)
+      broken_edges = setdiff(edges(state), edges(operator))
+      mts = messages(ψOψ_bpc)
+      for be in broken_edges
+        set!(mts, PartitionEdge(be), message(ψIψ_bpc, PartitionEdge(be)))
+        set!(mts, PartitionEdge(reverse(be)), message(ψIψ_bpc, PartitionEdge(reverse(be))))
+      end
+  
+      partition_edge_sequence = PartitionEdge.(post_order_dfs_edges(underlying_graph(operator), first(region)))
+      partition_edge_sequence = filter(e -> src(e) ∉ PartitionVertex.(region), partition_edge_sequence)
+      ψOψ_bpc = update(ψOψ_bpc, partition_edge_sequence; message_update = ms -> default_message_update(ms; normalize = false))
+      ψIψ_bpc = update(ψIψ_bpc, partition_edge_sequence; message_update = ms -> default_message_update(ms; normalize = false))
+      e_region = vcat([bra_vertex(ψOψ_qf, v) for v in region], [ket_vertex(ψOψ_qf, v) for v in region])
+      central_state_tensors = vcat(ITensor[ψOψ_qf[ket_vertex(ψOψ_qf, v)] for v in setdiff(region, [central_vert])], ITensor[ψOψ_qf[bra_vertex(ψOψ_qf, v)] for v in setdiff(region, [central_vert])])
+      push!(environments, vcat(environment(ψOψ_bpc, e_region), central_state_tensors))      
+    end
+    return environments
+end
+
+function effective_norm_environments_enlarged_region(state::ITensorNetwork, ψIψ_bpc::BeliefPropagationCache, region,
+    central_vert)
+    s = indsnetwork(state)
+    @assert central_vert ∈ region
+    ψIψ_qf = tensornetwork(ψIψ_bpc)
+  
+    e_region = vcat([bra_vertex(ψIψ_qf, v) for v in region], [ket_vertex(ψIψ_qf, v) for v in region])
+    central_state_tensors = vcat(ITensor[ψIψ_qf[ket_vertex(ψIψ_qf, v)] for v in setdiff(region, [central_vert])], ITensor[ψIψ_qf[bra_vertex(ψIψ_qf, v)] for v in setdiff(region, [central_vert])])
+    return vcat(environment(ψIψ_bpc, e_region), central_state_tensors) 
+end

@@ -1,4 +1,5 @@
-using ITensorNetworks: AbstractITensorNetwork, BeliefPropagationCache, messages, partitioned_tensornetwork
+using ITensorNetworks: ITensorNetworks, AbstractITensorNetwork, BeliefPropagationCache, messages, partitioned_tensornetwork,
+  optimal_contraction_sequence
 using NamedGraphs.PartitionedGraphs: PartitionEdge, partitionedges, partitionvertices
 using NamedGraphs.NamedGraphGenerators: named_hexagonal_lattice_graph
 using NamedGraphs.GraphsExtensions: decorate_graph_edges
@@ -97,4 +98,13 @@ function get_exact_environment(ψ::AbstractITensorNetwork, qf::QuadraticFormNetw
   tn = ITensorNetwork(ts)
   seq = contraction_sequence(tn; alg = "sa_bipartite")
   return contract(tn; sequence = seq)
+end
+
+function ITensorNetworks.default_message_update(contract_list::Vector{ITensor}; normalize=true, kwargs...)
+  sequence = optimal_contraction_sequence(contract_list)
+  updated_messages = contract(contract_list; sequence, kwargs...)
+  if normalize
+    updated_messages /= norm(updated_messages)
+  end
+  return ITensor[updated_messages]
 end
