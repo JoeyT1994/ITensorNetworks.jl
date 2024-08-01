@@ -104,7 +104,7 @@ end
 function effective_environments(state::ITensorNetwork, H::OpSum, ψIψ_bpc::BeliefPropagationCache, region)
     s = indsnetwork(state)
   
-    operators = get_tnos(s, H, first(region))
+    operators = get_tnos(s, H, region)
     environments = Vector{ITensor}[]
     for operator in operators
       ψOψ_qf = QuadraticFormNetwork(operator, state)
@@ -117,7 +117,9 @@ function effective_environments(state::ITensorNetwork, H::OpSum, ψIψ_bpc::Beli
       end
   
       partition_edge_sequence = PartitionEdge.(post_order_dfs_edges(underlying_graph(operator), first(region)))
-      ψOψ_bpc = update(ψOψ_bpc, partition_edge_sequence)
+      partition_edge_sequence = filter(e -> src(e) ∉ PartitionVertex.(region), partition_edge_sequence)
+      ψOψ_bpc = update(ψOψ_bpc, partition_edge_sequence; message_update = mts -> default_message_update(mts; normalize = false))
+      ψIψ_bpc = update(ψIψ_bpc, partition_edge_sequence; message_update = mts -> default_message_update(mts; normalize = false))
       e_region = vcat([bra_vertex(ψOψ_qf, v) for v in region], [ket_vertex(ψOψ_qf, v) for v in region])
       push!(environments, environment(ψOψ_bpc, e_region))      
     end

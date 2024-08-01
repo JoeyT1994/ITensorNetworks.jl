@@ -98,26 +98,3 @@ function get_exact_environment(ψ::AbstractITensorNetwork, qf::QuadraticFormNetw
   seq = contraction_sequence(tn; alg = "sa_bipartite")
   return contract(tn; sequence = seq)
 end
-
-function effective_environments(state::ITensorNetwork, H::OpSum, ψIψ_bpc::BeliefPropagationCache, region)
-  s = indsnetwork(state)
-
-  operators = get_tnos(s, H, first(region))
-  environments = Vector{ITensor}[]
-  for operator in operators
-    ψOψ_qf = QuadraticFormNetwork(operator, state)
-    ψOψ_bpc = BeliefPropagationCache(ψOψ_qf)
-    broken_edges = setdiff(edges(state), edges(operator))
-    mts = messages(ψOψ_bpc)
-    for be in broken_edges
-      set!(mts, PartitionEdge(be), message(ψIψ_bpc, PartitionEdge(be)))
-      set!(mts, PartitionEdge(reverse(be)), message(ψIψ_bpc, PartitionEdge(reverse(be))))
-    end
-
-    partition_edge_sequence = PartitionEdge.(post_order_dfs_edges(underlying_graph(operator), first(region)))
-    ψOψ_bpc = update(ψOψ_bpc, partition_edge_sequence)
-    e_region = vcat([bra_vertex(ψOψ_qf, v) for v in region], [ket_vertex(ψOψ_qf, v) for v in region])
-    push!(environments, environment(ψOψ_bpc, e_region))      
-  end
-  return environments
-end
