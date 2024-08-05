@@ -1,7 +1,7 @@
 using NamedGraphs: edges
 using NamedGraphs.NamedGraphGenerators: named_grid
 using NamedGraphs.GraphsExtensions: forest_cover, default_root_vertex, vertices, dfs_tree, undirected_graph,
-    bfs_tree, add_edges, post_order_dfs_edges
+    bfs_tree, add_edges, post_order_dfs_edges, boundary_edges
 
 using ITensorNetworks: IndsNetwork, underlying_graph, ttn, indsnetwork, default_message_update
 using ITensors: OpSum, sites
@@ -62,6 +62,22 @@ function BFS_prioritise_edges(g, start_region, priority_edges)
     return edges_traversed
 end
 
+function post_order_DFS_start_region(g, start_region)
+    visited = copy(start_region)
+    Q = boundary_edges(g, start_region; dir = :out)
+    edges_traversed = edgetype(g)[]
+    while !issetequal(visited, vertices(g))
+         #Code
+         e = popfirst!(Q)
+         cur_node = dst(e)
+         push!(edges_traversed, e)
+         push!(visited, cur_node)
+         es = NamedEdge[NamedEdge(cur_node => vn) for vn in setdiff(neighbors(g, cur_node), visited)]
+         append!(Q, es)
+    end
+    return reverse(reverse.(edges_traversed))
+end
+
 function spanning_trees(g, start_region)
     edges_covered = NamedEdge[]
     priority_edges = NamedEdge[]
@@ -113,13 +129,12 @@ function effective_environments(state::ITensorNetwork, H::OpSum, ψIψ_bpc::Beli
       ψOψ_bpc = BeliefPropagationCache(ψOψ_qf)
       broken_edges = setdiff(edges(state), edges(operator))
       mts = messages(ψOψ_bpc)
-      for be in broken_edges
+      for be in edges(state)
         set!(mts, PartitionEdge(be), message(ψIψ_bpc, PartitionEdge(be)))
         set!(mts, PartitionEdge(reverse(be)), message(ψIψ_bpc, PartitionEdge(reverse(be))))
       end
   
-      partition_edge_sequence = PartitionEdge.(post_order_dfs_edges(underlying_graph(operator), first(region)))
-      partition_edge_sequence = filter(e -> src(e) ∉ PartitionVertex.(region), partition_edge_sequence)
+      partition_edge_sequence = PartitionEdge.(post_order_DFS_start_region(underlying_graph(operator), region))
       ψOψ_bpc = update(ψOψ_bpc, partition_edge_sequence; message_update = ms -> default_message_update(ms; normalize = false))
       ψIψ_bpc = update(ψIψ_bpc, partition_edge_sequence; message_update = ms -> default_message_update(ms; normalize = false))
       e_region = vcat([bra_vertex(ψOψ_qf, v) for v in region], [ket_vertex(ψOψ_qf, v) for v in region])
@@ -134,35 +149,26 @@ function effective_environments_enlarged_region(state::ITensorNetwork, H::OpSum,
     @assert central_vert ∈ region
   
     operators = get_tnos(s, H, region)
-    environments = Vector{ITensor}[]
+    op_environments = Vector{ITensor}[]
+    ψIψ_qf = tensornetwork(ψIψ_bpc)
+    norm_e_region = vcat([bra_vertex(ψIψ_qf, v) for v in region], [ket_vertex(ψIψ_qf, v) for v in region])
+    norm_central_state_tensors = vcat(ITensor[ψIψ_qf[ket_vertex(ψIψ_qf, v)] for v in setdiff(region, [central_vert])], ITensor[ψIψ_qf[bra_vertex(ψIψ_qf, v)] for v in setdiff(region, [central_vert])])
+    norm_environments=vcat(environment(ψIψ_bpc, norm_e_region), norm_central_state_tensors)   
     for operator in operators
       ψOψ_qf = QuadraticFormNetwork(operator, state)
       ψOψ_bpc = BeliefPropagationCache(ψOψ_qf)
       broken_edges = setdiff(edges(state), edges(operator))
       mts = messages(ψOψ_bpc)
-      for be in broken_edges
+      for be in edges(state)
         set!(mts, PartitionEdge(be), message(ψIψ_bpc, PartitionEdge(be)))
         set!(mts, PartitionEdge(reverse(be)), message(ψIψ_bpc, PartitionEdge(reverse(be))))
       end
   
-      partition_edge_sequence = PartitionEdge.(post_order_dfs_edges(underlying_graph(operator), first(region)))
-      partition_edge_sequence = filter(e -> src(e) ∉ PartitionVertex.(region), partition_edge_sequence)
+      partition_edge_sequence = PartitionEdge.(post_order_DFS_start_region(underlying_graph(operator), region))
       ψOψ_bpc = update(ψOψ_bpc, partition_edge_sequence; message_update = ms -> default_message_update(ms; normalize = false))
-      ψIψ_bpc = update(ψIψ_bpc, partition_edge_sequence; message_update = ms -> default_message_update(ms; normalize = false))
       e_region = vcat([bra_vertex(ψOψ_qf, v) for v in region], [ket_vertex(ψOψ_qf, v) for v in region])
-      central_state_tensors = vcat(ITensor[ψOψ_qf[ket_vertex(ψOψ_qf, v)] for v in setdiff(region, [central_vert])], ITensor[ψOψ_qf[bra_vertex(ψOψ_qf, v)] for v in setdiff(region, [central_vert])])
-      push!(environments, vcat(environment(ψOψ_bpc, e_region), central_state_tensors))      
+      op_central_state_tensors = vcat(ITensor[ψOψ_qf[ket_vertex(ψOψ_qf, v)] for v in setdiff(region, [central_vert])], ITensor[ψOψ_qf[bra_vertex(ψOψ_qf, v)] for v in setdiff(region, [central_vert])])
+      push!(op_environments, vcat(environment(ψOψ_bpc, e_region), op_central_state_tensors))      
     end
-    return environments
-end
-
-function effective_norm_environments_enlarged_region(state::ITensorNetwork, ψIψ_bpc::BeliefPropagationCache, region,
-    central_vert)
-    s = indsnetwork(state)
-    @assert central_vert ∈ region
-    ψIψ_qf = tensornetwork(ψIψ_bpc)
-  
-    e_region = vcat([bra_vertex(ψIψ_qf, v) for v in region], [ket_vertex(ψIψ_qf, v) for v in region])
-    central_state_tensors = vcat(ITensor[ψIψ_qf[ket_vertex(ψIψ_qf, v)] for v in setdiff(region, [central_vert])], ITensor[ψIψ_qf[bra_vertex(ψIψ_qf, v)] for v in setdiff(region, [central_vert])])
-    return vcat(environment(ψIψ_bpc, e_region), central_state_tensors) 
+    return op_environments, norm_environments
 end
