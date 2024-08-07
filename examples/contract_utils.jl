@@ -1,13 +1,27 @@
-using ITensorNetworks: ITensorNetworks, AbstractITensorNetwork, BeliefPropagationCache, messages, partitioned_tensornetwork,
-  optimal_contraction_sequence
-using NamedGraphs.PartitionedGraphs: PartitionEdge, partitionedges, partitionvertices
+using ITensorNetworks:
+  ITensorNetworks,
+  AbstractITensorNetwork,
+  BeliefPropagationCache,
+  messages,
+  partitioned_tensornetwork,
+  optimal_contraction_sequence,
+  IndsNetwork,
+  norm_sqr_network,
+  neighbor_vertices,
+  update_factor,
+  expect
+using NamedGraphs.PartitionedGraphs:
+  PartitionEdge, partitionedges, partitionvertices, partitionedge
 using NamedGraphs.NamedGraphGenerators: named_hexagonal_lattice_graph
 using NamedGraphs.GraphsExtensions: decorate_graph_edges
 using NamedGraphs: rename_vertices
-using ITensors: dag, replaceinds
+using ITensors:
+  dag, replaceinds, Trotter, apply, noprime, prime, replaceind, map_diag!, denseblocks
 using LinearAlgebra: norm, dot
 using Dictionaries: Dictionary, set!
 using OMEinsumContractionOrders
+using SplitApplyCombine: group
+using ITensors: OpSum
 
 function normalize_messages(bp_cache::BeliefPropagationCache, pes::Vector{<:PartitionEdge})
   bp_cache = copy(bp_cache)
@@ -17,7 +31,7 @@ function normalize_messages(bp_cache::BeliefPropagationCache, pes::Vector{<:Part
     me /= norm(me)
     mer /= norm(mer)
     n = dot(me, mer)
-    if isa(n, Float64) && n < 0 
+    if isa(n, Float64) && n < 0
       set!(mts, pe, ITensor[(-1 / sqrt(abs(n))) * me])
       set!(mts, reverse(pe), ITensor[(1 / sqrt(abs(n))) * mer])
     else
@@ -37,34 +51,30 @@ function normalize_messages(bp_cache::BeliefPropagationCache)
 end
 
 function renamer(g)
-    vertex_rename = Dictionary()
-    for (i, v) in enumerate(vertices(g))
-      set!(vertex_rename, v, (i,))
-    end
-    return rename_vertices(v -> vertex_rename[v], g)
+  vertex_rename = Dictionary()
+  for (i, v) in enumerate(vertices(g))
+    set!(vertex_rename, v, (i,))
+  end
+  return rename_vertices(v -> vertex_rename[v], g)
 end
-  
+
 function heavy_hex_lattice_graph(n::Int64, m::Int64; periodic)
-    """Create heavy-hex lattice geometry"""
-    g = named_hexagonal_lattice_graph(n, m; periodic)
-    g = decorate_graph_edges(g)
-    return renamer(g)
+  """Create heavy-hex lattice geometry"""
+  g = named_hexagonal_lattice_graph(n, m; periodic)
+  g = decorate_graph_edges(g)
+  return renamer(g)
 end
 
 function lieb_lattice_graph(n::Int64, m::Int64; periodic)
   """Create heavy-hex lattice geometry"""
-  g = named_grid((n,m); periodic)
+  g = named_grid((n, m); periodic)
   g = decorate_graph_edges(g)
   return renamer(g)
 end
 
 function renormalize_update_norm_cache(
-  ψ::ITensorNetwork,
-  ψIψ_bpc::BeliefPropagationCache;
-  cache_update_kwargs,
-  update_cache = true,
+  ψ::ITensorNetwork, ψIψ_bpc::BeliefPropagationCache; cache_update_kwargs, update_cache=true
 )
-
   ψ = copy(ψ)
   if update_cache
     ψIψ_bpc = update(ψIψ_bpc; cache_update_kwargs...)
@@ -96,15 +106,100 @@ end
 function get_exact_environment(ψ::AbstractITensorNetwork, qf::QuadraticFormNetwork, v)
   ts = [get_local_term(qf, vp) for vp in setdiff(collect(vertices(ψ)), [v])]
   tn = ITensorNetwork(ts)
-  seq = contraction_sequence(tn; alg = "sa_bipartite")
-  return contract(tn; sequence = seq)
+  seq = contraction_sequence(tn; alg="sa_bipartite")
+  return contract(tn; sequence=seq)
 end
 
-function ITensorNetworks.default_message_update(contract_list::Vector{ITensor}; normalize=true, kwargs...)
+function ITensorNetworks.default_message_update(
+  contract_list::Vector{ITensor}; normalize=true, kwargs...
+)
   sequence = optimal_contraction_sequence(contract_list)
   updated_messages = contract(contract_list; sequence, kwargs...)
   if normalize
     updated_messages /= norm(updated_messages)
   end
   return ITensor[updated_messages]
+end
+
+function imaginary_time_evo(
+  s::IndsNetwork,
+  ψ::ITensorNetwork,
+  model::Function,
+  dbetas::Vector{<:Tuple};
+  model_params,
+  bp_update_kwargs=(; maxiter=10, tol=1e-10),
+  apply_kwargs=(; cutoff=1e-12, maxdim=10),
+)
+  ψ = copy(ψ)
+  g = underlying_graph(ψ)
+  L = length(vertices(g))
+
+  ℋ = filter_zero_terms(model(g; model_params...))
+  ψψ = norm_sqr_network(ψ)
+  bpc = BeliefPropagationCache(ψψ, group(v -> v[1], vertices(ψψ)))
+  bpc = update(bpc; bp_update_kwargs...)
+  println("Starting Imaginary Time Evolution")
+  β = 0
+  for (i, period) in enumerate(dbetas)
+    nbetas, dβ = first(period), last(period)
+    println("Entering evolution period $i , β = $β, dβ = $dβ")
+    U = exp(-dβ * ℋ; alg=Trotter{2}())
+    gates = Vector{ITensor}(U, s)
+    for i in 1:nbetas
+      for gate in gates
+        ψ, bpc = BP_apply(gate, ψ, bpc; apply_kwargs...)
+      end
+      β += dβ
+      bpc = update(bpc; bp_update_kwargs...)
+    end
+  end
+
+  return ψ
+end
+
+function filter_zero_terms(H::OpSum)
+  new_H = OpSum()
+  for h in H
+    if !iszero(first(h.args))
+      new_H += h
+    end
+  end
+  return new_H
+end
+
+function BP_apply(
+  o::ITensor,
+  ψ::AbstractITensorNetwork,
+  bpc::BeliefPropagationCache;
+  reset_all_messages=false,
+  apply_kwargs...,
+)
+  bpc = copy(bpc)
+  ψ = copy(ψ)
+  vs = neighbor_vertices(ψ, o)
+  envs = environment(bpc, PartitionVertex.(vs))
+  singular_values! = Ref(ITensor())
+  ψ = noprime(apply(o, ψ; envs, singular_values!, normalize=true, apply_kwargs...))
+  ψdag = prime(dag(ψ); sites=[])
+  if length(vs) == 2
+    v1, v2 = vs
+    pe = partitionedge(bpc, (v1, "bra") => (v2, "bra"))
+    mts = messages(bpc)
+    ind2 = commonind(singular_values![], ψ[v1])
+    δuv = dag(copy(singular_values![]))
+    δuv = replaceind(δuv, ind2, ind2')
+    map_diag!(sign, δuv, δuv)
+    singular_values![] = denseblocks(singular_values![]) * denseblocks(δuv)
+    if !reset_all_messages
+      set!(mts, pe, dag.(ITensor[singular_values![]]))
+      set!(mts, reverse(pe), ITensor[singular_values![]])
+    else
+      bpc = BeliefPropagationCache(partitioned_tensornetwork(bpc))
+    end
+  end
+  for v in vs
+    bpc = update_factor(bpc, (v, "ket"), ψ[v])
+    bpc = update_factor(bpc, (v, "bra"), ψdag[v])
+  end
+  return ψ, bpc
 end
