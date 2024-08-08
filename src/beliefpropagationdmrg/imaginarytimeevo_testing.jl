@@ -10,18 +10,16 @@ using NPZ
 include("bp_dmrg.jl")
 include("utils.jl")
 
-graph_params = Dictionary(["L"], [128])
-g, file_string, kitaev_terms = graph_parser("HYPERHONEYCOMB"; params = graph_params)
+g = lieb_lattice_graph(3,3; periodic = true)
 
 s = siteinds("S=1/2", g; conserve_qns = true)
 L = length(vertices(g))
-Jx, Jy, Jz = 1.0, 1.0, 1.0
-hx, hy, hz = 0.0, 0.0, 0.0
-K = 1
+Jx, Jy, Jz = -0.5, 0.0, 1.3
+hx, hy, hz = 1.4, 0.0, 0.2
 
-χ = 2
+χ = 3
 s = siteinds("S=1/2", g)
-model_params = (; Jx, Jy, Jz, hx, hy, hz, K, kitaev_terms)
+model_params = (; Jx, Jy, Jz, hx, hy, hz)
 dbetas = [(100, 0.1), (100, 0.05), (100, 0.025), (100, 0.01)]
 bp_update_kwargs= (; maxiter=25, tol=1e-8, makeposdeffreq = 5)
 apply_kwargs= (; cutoff=1e-14, maxdim=χ)

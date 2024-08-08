@@ -271,8 +271,8 @@ function imaginary_time_evo(
     end
     e = sum(expect(ψ, ℋ; alg="bp"))
     Z = sum(expect(ψ, "Z"; alg = "bp"))
-    println("Total Mag is $(Z/L)")
-    println("Energy is $(e/L)")
+    println("Total Mag is $(Z)")
+    println("Energy is $(e)")
   end
 
   return ψ

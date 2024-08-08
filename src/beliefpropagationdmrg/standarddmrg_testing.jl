@@ -27,20 +27,17 @@ function ITensors.measure!(o::ErrorObserver; kwargs...)
     o.region_energies[o.total_region_updates] = kwargs[:energy]
 end
 
-include("bp_dmrg.jl")
 include("utils.jl")
 
-save = false
-graph_params = Dictionary(["L"], [16])
-g, file_string = graph_parser("HYPERHONEYCOMB"; params = graph_params)
+g = lieb_lattice_graph(3,3; periodic = true)
 
 adj_mat = graph_to_adj_mat(g)
-chi = 10
+chi = 100
 
 N = length(vertices(g))
 s = siteinds("S=1/2", N)
-Jx, Jy, Jz = 1.0, 1.0, 1.0
-hx, hy, hz = 0.0, 0.0, 0.0
+Jx, Jy, Jz = -0.5, 0.0, 1.3
+hx, hy, hz = 1.4, 0.0, 0.2
 os = xyz_adjmat(N, adj_mat; Jx, Jy, Jz, hx, hy, hz)
 H = MPO(os, s)
 init_state = [isodd(i) ? "Up" : "Dn" for i = 1:N]
@@ -53,14 +50,7 @@ setcutoff!(sweeps, 1E-14)
 err_obs = ErrorObserver(total_sweeps = no_sweeps, no_bonds = N - 1)
 
 e_f, psifinal =  dmrg(H,psi0, sweeps; observer = err_obs)
-energies = (err_obs.region_energies) ./ N
-final_mags = expect(psifinal, "Z")
-@show e_f / N
-@show sum(final_mags) / L
+#energies = (err_obs.region_energies) ./ N
+@show e_f
 
-file_name =
-"/Users/jtindall/Files/Data/DMRG/"*file_string*"Jx$(Jx)Jy$(Jy)Jz$(Jz)hx$(hx)hy$(hy)hz$(hz)chi$(chi)NoSweeps$(no_sweeps)"
-if save
-    npzwrite(file_name * ".npz"; energies=energies, final_mags=final_mags)
-end
 

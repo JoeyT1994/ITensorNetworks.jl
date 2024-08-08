@@ -19,7 +19,6 @@ function make_posdef(A::ITensor)
   return map_eigvals(x -> real(x), A, first(inds(A)), last(inds(A)); ishermitian = true)
 end
 
-#default_message(scalartype, inds_e) = ITensor[denseblocks(delta(scalartype, i)) for i in inds_e]
 default_message(scalartype, inds_e) = ITensor[denseblocks(delta(scalartype, inds_e))] 
 default_messages(ptn::PartitionedGraph) = Dictionary()
 default_message_norm(m::ITensor) = norm(m)

@@ -2,6 +2,7 @@ using NamedGraphs.GraphsExtensions: is_tree
 using NamedGraphs.PartitionedGraphs: partitionvertices, partitionedges, PartitionEdge
 using ITensorNetworks: ITensorNetwork, QuadraticFormNetwork, BeliefPropagationCache, update, default_message_update, maxlinkdim, indsnetwork
 using ITensors: scalar
+using LinearAlgebra
 
 include("bp_extracter.jl")
 include("bp_inserter.jl")
@@ -21,7 +22,7 @@ function initialize_cache(ψ_init::ITensorNetwork; cache_update_kwargs = default
 end
 
 function bp_dmrg(ψ_init::ITensorNetwork, H::OpSum; nsites = 1, no_sweeps = 1, bp_update_kwargs = default_bp_update_kwargs(ψ_init),
-    inserter_kwargs = (;), optimizer = "LineSearch")
+    inserter_kwargs = (;))
 
     L = length(vertices(ψ_init))
     state, ψIψ_bpc = initialize_cache(ψ_init; cache_update_kwargs = bp_update_kwargs)
@@ -30,34 +31,21 @@ function bp_dmrg(ψ_init::ITensorNetwork, H::OpSum; nsites = 1, no_sweeps = 1, b
 
 
     init_energy = real(sum(expect(state, H; alg="bp", (cache!)=Ref(ψIψ_bpc))))
-    println("Initial energy density is $(init_energy / L)")
+    println("Initial BP energy density is $(init_energy / L)")
     energies = Float64[init_energy / L]
     term_dict = opsum_to_edge_dict(indsnetwork(state), H)
 
-    count = 0
     for i in 1:no_sweeps
         println("Beginning sweep $i")
         for region in regions
             println("Updating vertex $region")
-            println("This is update $count")
 
-            cur_local_state, ∂ψOψ_bpc_∂rs, sqrt_mts, inv_sqrt_mts = bp_extracter(state, H, ψIψ_bpc, region; regularization = 0)
+            cur_local_state, ∂ψOψ_bpc_∂rs, ∂ψIψ_bpc_∂r = bp_extracter(state, H, ψIψ_bpc, region)
 
-            if optimizer == "LineSearch"
-                new_local_state, final_energy = bp_eigsolve_updater(cur_local_state, ∂ψOψ_bpc_∂rs, sqrt_mts, inv_sqrt_mts)
-                state, ψIψ_bpc, final_energy = optimise(H, new_local_state, cur_local_state, state,  ψIψ_bpc,
-                sqrt_mts, inv_sqrt_mts, region, last(energies); bp_update_kwargs, inserter_kwargs)
-            elseif optimizer == "None"
-                new_local_state, final_energy = bp_eigsolve_updater(cur_local_state, ∂ψOψ_bpc_∂rs, sqrt_mts, inv_sqrt_mts)
-                state, ψIψ_bpc = bp_inserter(state, ψIψ_bpc, new_local_state, sqrt_mts, inv_sqrt_mts, region; bp_update_kwargs, inserter_kwargs...)
-                final_energy = real(sum(expect(state, H; alg="bp", (cache!)=Ref(ψIψ_bpc)))) / L
-            elseif optimizer == "Rotate"
-                state, ψIψ_bpc, final_energy = bp_eigsolve_updater_V2(cur_local_state, ∂ψOψ_bpc_∂rs, sqrt_mts, inv_sqrt_mts, last(energies), state, ψIψ_bpc, H, region; bp_update_kwargs, inserter_kwargs)
-            end
+            new_local_state, final_energy = bp_eigsolve_updater(cur_local_state, ∂ψOψ_bpc_∂rs, ∂ψIψ_bpc_∂r)
+            state, ψIψ_bpc = bp_inserter(state, ψIψ_bpc, new_local_state, region; bp_update_kwargs, inserter_kwargs...)
 
-            println("Updated state, energy density of $final_energy")
-
-            count += 1
+            println("Updated state, energy is $final_energy")
 
             append!(energies, final_energy)
         end
