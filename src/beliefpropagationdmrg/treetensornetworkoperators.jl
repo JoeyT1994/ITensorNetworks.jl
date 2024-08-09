@@ -100,3 +100,20 @@ function get_tnos(s::IndsNetwork, H::OpSum, start_region)
 
     return tnos
 end
+
+function post_order_DFS_start_region(g, start_region)
+  visited = copy(start_region)
+  Q = boundary_edges(g, start_region; dir=:out)
+  edges_traversed = edgetype(g)[]
+  while !issetequal(visited, vertices(g))
+    e = popfirst!(Q)
+    cur_node = dst(e)
+    push!(edges_traversed, e)
+    push!(visited, cur_node)
+    es = NamedEdge[
+      NamedEdge(cur_node => vn) for vn in setdiff(neighbors(g, cur_node), visited)
+    ]
+    append!(Q, es)
+  end
+  return reverse(reverse.(edges_traversed))
+end
