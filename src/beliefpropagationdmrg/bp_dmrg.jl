@@ -24,16 +24,10 @@ end
 function bp_dmrg(ψ_init::ITensorNetwork, H::OpSum; nsites = 1, no_sweeps = 1, bp_update_kwargs = default_bp_update_kwargs(ψ_init),
     inserter_kwargs = (;))
 
-    L = length(vertices(ψ_init))
     state, ψIψ_bpc = initialize_cache(ψ_init; cache_update_kwargs = bp_update_kwargs)
     state_vertices, state_edges = collect(vertices(state)), edges(state)
     regions = new_bp_region_plan(underlying_graph(ψ_init); nsites, add_additional_traversal = false)
-
-
-    init_energy = real(sum(expect(state, H; alg="bp", (cache!)=Ref(ψIψ_bpc))))
-    println("Initial BP energy density is $(init_energy / L)")
-    energies = Float64[init_energy / L]
-    term_dict = opsum_to_edge_dict(indsnetwork(state), H)
+    energies = Float64[]
 
     for i in 1:no_sweeps
         println("Beginning sweep $i")

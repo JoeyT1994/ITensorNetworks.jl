@@ -29,10 +29,10 @@ end
 
 include("utils.jl")
 
-g = lieb_lattice_graph(3,3; periodic = true)
+g = lieb_lattice_graph(3,3; periodic = false)
 
 adj_mat = graph_to_adj_mat(g)
-chi = 100
+chi = 250
 
 N = length(vertices(g))
 s = siteinds("S=1/2", N)

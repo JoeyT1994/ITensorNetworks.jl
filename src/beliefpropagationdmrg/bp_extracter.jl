@@ -1,8 +1,9 @@
-using ITensors: scalartype, which_op, name, names, sites, OpSum
+using ITensors: ITensors, scalartype, which_op, name, names, sites, OpSum
 using ITensorNetworks:
   AbstractITensorNetwork, ket_vertices, bra_vertices, tensornetwork, default_message_update, operator_network
 using ITensorNetworks.ITensorsExtensions: map_eigvals
 using NamedGraphs.GraphsExtensions: a_star, neighbors, boundary_edges, vertices_at_distance
+using OMEinsumContractionOrders
 
 include("treetensornetworkoperators.jl")
 
@@ -62,6 +63,7 @@ function effective_environments_enlarged_region(
 
     partition_edge_sequence =
       PartitionEdge.(post_order_DFS_start_region(underlying_graph(operator), region))
+    @show partition_edge_sequence
     ψOψ_bpc = update(
       ψOψ_bpc,
       partition_edge_sequence;
@@ -73,7 +75,7 @@ function effective_environments_enlarged_region(
     op_central_state_tensors = vcat(
       ITensor[ψOψ_qf[ket_vertex(ψOψ_qf, v)] for v in setdiff(region, [central_vert])],
       ITensor[ψOψ_qf[bra_vertex(ψOψ_qf, v)] for v in setdiff(region, [central_vert])],
-    )
+    ) 
     push!(op_environments, vcat(environment(ψOψ_bpc, e_region), op_central_state_tensors))
   end
   return op_environments, norm_environments
@@ -93,8 +95,13 @@ function bp_extracter(
   else
     central_vert = only(region)
     super_region = unique(reduce(vcat,[vertices_at_distance(ψ, central_vert, d) for d in 0:dist]))
+    @show setdiff(vertices(ψ), super_region)
+    #super_region = vertices(ψ)
     ∂ψOψ_bpc_∂rs, ∂ψIψ_bpc_∂r = effective_environments_enlarged_region(ψ, H, ψIψ_bpc, super_region, central_vert)
   end
+
+  ITensors.disable_warn_order()
+  #@show [inds(contract(∂ψOψ_bpc_∂r); sequence = contraction_sequence(∂ψOψ_bpc_∂r; alg = "sa_bipartite")) for ∂ψOψ_bpc_∂r in ∂ψOψ_bpc_∂rs]
 
   return state, ∂ψOψ_bpc_∂rs, ∂ψIψ_bpc_∂r
 end
