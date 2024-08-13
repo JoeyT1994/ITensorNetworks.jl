@@ -13,7 +13,8 @@ using NamedGraphs.GraphsExtensions:
   subgraph,
   src,
   dst,
-  degree
+  degree,
+  leaf_vertices
 using NamedGraphs.PartitionedGraphs: PartitionVertex, partitionedge, unpartitioned_graph
 using ITensorNetworks:
   BeliefPropagationCache,
@@ -337,3 +338,14 @@ function exact_energy(ψ::AbstractITensorNetwork, H::OpSum)
   end
   return e / z
 end
+
+function get_region(g::AbstractGraph, dist, central_vert)
+  R = unique(reduce(vcat,[vertices_at_distance(g, central_vert, d) for d in 0:dist]))
+  g_mod = subgraph(g, R)
+  while !isempty(leaf_vertices(g_mod)) && length(vertices(g)) != 1
+    g_mod = rem_vertices(g_mod, setdiff(collect(leaf_vertices(g_mod)), [central_vert]))
+  end
+
+  return collect(vertices(g_mod))
+end
+

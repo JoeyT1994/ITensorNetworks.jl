@@ -61,8 +61,12 @@ function effective_environments_enlarged_region(
       set!(mts, PartitionEdge(reverse(be)), message(ψIψ_bpc, PartitionEdge(reverse(be))))
     end
 
-    partition_edge_sequence =
-      PartitionEdge.(post_order_dfs_edges(underlying_graph(operator), region))
+    #partition_edge_sequence =
+    #  PartitionEdge.(post_order_dfs_edges(underlying_graph(operator), region))
+
+    partition_edge_sequence = post_order_dfs_edges(underlying_graph(operator), central_vert)
+    partition_edge_sequence = vcat(partition_edge_sequence, reverse(reverse.(partition_edge_sequence)))
+    partition_edge_sequence = PartitionEdge.(partition_edge_sequence)
     ψOψ_bpc = update(
       ψOψ_bpc,
       partition_edge_sequence;
@@ -90,7 +94,7 @@ function bp_extracter(
     ∂ψOψ_bpc_∂rs, ∂ψIψ_bpc_∂r = effective_environments(ψ, H, ψIψ_bpc, region)
   else
     central_vert = only(region)
-    super_region = unique(reduce(vcat,[vertices_at_distance(ψ, central_vert, d) for d in 0:dist]))
+    super_region = get_region(ψ, dist, central_vert)
     ∂ψOψ_bpc_∂rs, ∂ψIψ_bpc_∂r = effective_environments_enlarged_region(ψ, H, ψIψ_bpc, super_region, central_vert)
   end
 
