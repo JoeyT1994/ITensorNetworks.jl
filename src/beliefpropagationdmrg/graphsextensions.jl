@@ -134,8 +134,8 @@ function original_bp_region_plan(
   end
 end
 
-function basic_bp_region_plan(g::AbstractGraph)
-    state_vertices = vertices(g)
+function basic_bp_region_plan(g::AbstractGraph; nsites = 1)
+    state_vertices = collect(vertices(g))
     state_edges = edges(g)
     if nsites == 1
         regions = [[v] for v in vcat(state_vertices, reverse(state_vertices))]

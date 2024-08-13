@@ -29,7 +29,8 @@ end
 
 include("utils.jl")
 
-g = lieb_lattice_graph(3,3; periodic = false)
+#g = lieb_lattice_graph(5,5; periodic = false)
+g = named_grid((6,6))
 
 adj_mat = graph_to_adj_mat(g)
 chi = 250

@@ -22,11 +22,12 @@ function initialize_cache(ψ_init::ITensorNetwork; cache_update_kwargs = default
 end
 
 function bp_dmrg(ψ_init::ITensorNetwork, H::OpSum; nsites = 1, no_sweeps = 1, bp_update_kwargs = default_bp_update_kwargs(ψ_init),
-    inserter_kwargs = (;))
+    inserter_kwargs = (;), dist::Int=  0)
 
     state, ψIψ_bpc = initialize_cache(ψ_init; cache_update_kwargs = bp_update_kwargs)
     state_vertices, state_edges = collect(vertices(state)), edges(state)
-    regions = new_bp_region_plan(underlying_graph(ψ_init); nsites, add_additional_traversal = false)
+    #regions = new_bp_region_plan(underlying_graph(ψ_init); nsites, add_additional_traversal = false)
+    regions = basic_bp_region_plan(ψ_init; nsites)
     energies = Float64[]
 
     for i in 1:no_sweeps
@@ -34,7 +35,7 @@ function bp_dmrg(ψ_init::ITensorNetwork, H::OpSum; nsites = 1, no_sweeps = 1, b
         for region in regions
             println("Updating vertex $region")
 
-            cur_local_state, ∂ψOψ_bpc_∂rs, ∂ψIψ_bpc_∂r = bp_extracter(state, H, ψIψ_bpc, region)
+            cur_local_state, ∂ψOψ_bpc_∂rs, ∂ψIψ_bpc_∂r = bp_extracter(state, H, ψIψ_bpc, region; dist)
 
             new_local_state, final_energy = bp_eigsolve_updater(cur_local_state, ∂ψOψ_bpc_∂rs, ∂ψIψ_bpc_∂r)
             state, ψIψ_bpc = bp_inserter(state, ψIψ_bpc, new_local_state, region; bp_update_kwargs, inserter_kwargs...)

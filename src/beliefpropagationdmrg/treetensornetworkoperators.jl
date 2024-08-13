@@ -4,7 +4,7 @@ using NamedGraphs.GraphsExtensions: forest_cover, default_root_vertex, vertices,
     bfs_tree
 using ITensorNetworks: IndsNetwork
 
-using NamedGraphs: edges
+using NamedGraphs: NamedGraphs, edges
 using NamedGraphs.NamedGraphGenerators: named_grid
 using NamedGraphs.GraphsExtensions:
   forest_cover,
@@ -16,6 +16,7 @@ using NamedGraphs.GraphsExtensions:
   add_edges,
   post_order_dfs_edges,
   boundary_edges
+using Graphs: merge_vertices
 
 using ITensorNetworks:
   IndsNetwork, underlying_graph, ttn, indsnetwork, default_message_update
@@ -87,22 +88,13 @@ function BFS_prioritise_edges(g, start_region, priority_edges)
   return edges_traversed
 end
 
-function post_order_DFS_start_region(g, start_region)
-  visited = copy(start_region)
-  Q = boundary_edges(g, start_region; dir=:out)
-  edges_traversed = edgetype(g)[]
-  while !issetequal(visited, vertices(g))
-    #Code
-    e = popfirst!(Q)
-    cur_node = dst(e)
-    push!(edges_traversed, e)
-    push!(visited, cur_node)
-    es = NamedEdge[
-      NamedEdge(cur_node => vn) for vn in setdiff(neighbors(g, cur_node), visited)
-    ]
-    append!(Q, es)
-  end
-  return reverse(reverse.(edges_traversed))
+function NamedGraphs.GraphsExtensions.post_order_dfs_edges(g, start_region::Vector)
+    es = boundary_edges(g, start_region; dir=:out)
+    g_mod = merge_vertices(g, start_region)
+    out_es = post_order_dfs_edges(g_mod, first(start_region))
+    out_es = filter(e -> dst(e) ≠ first(start_region), out_es)
+    append!(out_es, reverse.(es))
+    return out_es
 end
 
 function spanning_trees(g, start_region)
