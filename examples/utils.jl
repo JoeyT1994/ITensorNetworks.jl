@@ -41,7 +41,7 @@ function boundary_message(ψIψ_bpc::BeliefPropagationCache, ψ::AbstractITensor
         s[first(p)] = Index[sind, sind']
     end
 
-    m = ITensorNetwork(v -> inds -> denseblocks(delta(inds)), s; link_space = rank)
+    m = ITensorNetwork(v -> inds -> ITensor(1.0, inds), s; link_space = rank)
     m = rename_vertices(v -> (v, "message"), m)
     return m
 end
