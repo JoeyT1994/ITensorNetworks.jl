@@ -289,7 +289,7 @@ end
 
 function ITensors.uniqueinds(tn::AbstractITensorNetwork, vertex)
   tn_vertex = [tn[vertex]; collect(neighbor_tensors(tn, vertex))]
-  return reduce(setdiff, inds.(tn_vertex))
+  return Index[i for i in reduce(setdiff, inds.(tn_vertex))]
 end
 
 function ITensors.uniqueinds(tn::AbstractITensorNetwork, edge::AbstractEdge)

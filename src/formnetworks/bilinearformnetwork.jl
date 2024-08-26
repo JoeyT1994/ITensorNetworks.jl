@@ -25,11 +25,12 @@ function BilinearFormNetwork(
   ket_vertex_suffix=default_ket_vertex_suffix(),
   dual_site_index_map=default_dual_site_index_map,
   dual_link_index_map=default_dual_link_index_map,
+  map_bra = true
 )
-  bra_mapped = dual_link_index_map(dual_site_index_map(bra; links=[]); sites=[])
+  bra_mapped = map_bra ? dual_link_index_map(dual_site_index_map(bra; links=[]); sites=[]) : copy(dag(bra))
   tn = disjoint_union(
     operator_vertex_suffix => operator,
-    bra_vertex_suffix => dag(bra_mapped),
+    bra_vertex_suffix => bra_mapped,
     ket_vertex_suffix => ket,
   )
   return BilinearFormNetwork(
@@ -66,7 +67,7 @@ function BilinearFormNetwork(
   link_space = isempty(flatten_siteinds(bra)) ? 1 : nothing
   operator_inds = union_all_inds(siteinds(ket), dual_site_index_map(siteinds(ket)))
   # TODO: Define and use `identity_network` here.
-  O = ITensorNetwork(Op("I"), operator_inds; link_space)
+  O = ITensorNetwork(v -> inds -> delta(inds), operator_inds; link_space)
   return BilinearFormNetwork(O, bra, ket; dual_site_index_map, kwargs...)
 end
 
