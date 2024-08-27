@@ -16,11 +16,11 @@ using NDTensors: NDTensors
 
 default_message(elt, inds_e) = ITensor[denseblocks(delta(elt, i)) for i in inds_e]
 default_messages(ptn::PartitionedGraph) = Dictionary()
-function default_message_update(contract_list::Vector{ITensor}; kwargs...)
+function default_message_update(contract_list::Vector{ITensor}; normalize=true, kwargs...)
   sequence = optimal_contraction_sequence(contract_list)
   updated_messages = contract(contract_list; sequence, kwargs...)
   message_norm = norm(updated_messages)
-  if !iszero(message_norm)
+  if normalize && !iszero(message_norm)
     updated_messages /= message_norm
   end
   return ITensor[updated_messages]
@@ -88,6 +88,7 @@ for f in [
   :(PartitionedGraphs.partitionedge),
   :(PartitionedGraphs.partitionedges),
   :(PartitionedGraphs.partitionvertices),
+  :(PartitionedGraphs.partitionvertex),
   :(PartitionedGraphs.unpartitioned_graph),
   :(PartitionedGraphs.vertices),
   :(PartitionedGraphs.boundary_partitionedges),
@@ -109,7 +110,7 @@ end
 
 function message(bp_cache::BeliefPropagationCache, edge::PartitionEdge)
   mts = messages(bp_cache)
-  return get(mts, edge, default_message(bp_cache, edge))
+  return get(() -> default_message(bp_cache, edge), mts, edge)
 end
 function messages(bp_cache::BeliefPropagationCache, edges; kwargs...)
   return map(edge -> message(bp_cache, edge; kwargs...), edges)
