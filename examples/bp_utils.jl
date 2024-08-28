@@ -54,6 +54,7 @@ function update_planar(
   for i in 1:maxiter
     diff = compute_error ? Ref(0.0) : nothing
     bp_cache = update_planar(bp_cache, edges; (update_diff!)=diff, kwargs...)
+    @show (diff.x / length(edges))
     if compute_error && (diff.x / length(edges)) <= tol
       if verbose
         println("BP converged to desired precision after $i iterations.")
@@ -87,8 +88,8 @@ function boundary_message(ψIψ_bpc::BeliefPropagationCache, ψ::AbstractITensor
 
     m = ITensorNetwork(v -> inds -> ITensor(1.0, inds), s; link_space = rank)
     m = rename_vertices(v -> (v, "message"), m)
-    m = norm_orthogonalize(m)
-    #m = MPS_truncate(m)
+    m = orthogonalize(m, first(vertices(m)))
+    m[(first(vertices(m)))] = normalize(m[(first(vertices(m)))])
     return m
 end
 

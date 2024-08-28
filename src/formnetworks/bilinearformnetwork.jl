@@ -27,7 +27,7 @@ function BilinearFormNetwork(
   dual_link_index_map=default_dual_link_index_map,
   map_bra = true
 )
-  bra_mapped = map_bra ? dual_link_index_map(dual_site_index_map(bra; links=[]); sites=[]) : copy(dag(bra))
+  bra_mapped = map_bra ? dag(dual_link_index_map(dual_site_index_map(bra; links=[]); sites=[])) : copy(dag(bra))
   tn = disjoint_union(
     operator_vertex_suffix => operator,
     bra_vertex_suffix => bra_mapped,

@@ -2,7 +2,7 @@ using Graphs: merge_vertices, has_edge, is_tree
 using NamedGraphs: NamedGraph, vertices, src, dst
 using NamedGraphs.NamedGraphGenerators: named_grid, named_hexagonal_lattice_graph
 using NamedGraphs.GraphsExtensions: rem_vertex, subgraph, edges, neighbors, add_edges, add_edge, rem_edge,
-    rem_edge!, rem_edges, post_order_dfs_edges
+    rem_edge!, rem_edges, post_order_dfs_edges, leaf_vertices, a_star
 using NamedGraphs: NamedEdge, rename_vertices
 using NamedGraphs.PartitionedGraphs: PartitionEdge, partitionvertices, partitionedges, partitioned_graph,
     unpartitioned_graph, PartitionVertex, boundary_partitionedges, PartitionedGraph, partitioned_vertices,
@@ -49,10 +49,14 @@ function LinearAlgebra.normalize(
     return ψ, ψψ_bpc
 end
 
-function norm_orthogonalize(ψ::AbstractITensorNetwork; v = first(vertices(ψ)))
+function norm_orthogonalize(ψ::AbstractITensorNetwork, v)
     ψ = orthogonalize(ψ, v)
-    ψ[v] = normalize(ψ[v])
     return ψ
+end
+
+function norm_orthogonalize(ψ::AbstractITensorNetwork, seq)
+  ψ = orthogonalize(ψ, seq)
+  return ψ
 end
 
 function MPS_truncate(ψ::AbstractITensorNetwork; cutoff = 1e-16)
