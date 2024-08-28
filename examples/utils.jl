@@ -1,21 +1,21 @@
-using Graphs: merge_vertices, has_edge, is_tree
+using Graphs: merge_vertices, has_edge, is_tree, center
 using NamedGraphs: NamedGraph, vertices, src, dst
 using NamedGraphs.NamedGraphGenerators: named_grid, named_hexagonal_lattice_graph
 using NamedGraphs.GraphsExtensions: rem_vertex, subgraph, edges, neighbors, add_edges, add_edge, rem_edge,
-    rem_edge!, rem_edges, post_order_dfs_edges, leaf_vertices, a_star
+    rem_edge!, rem_edges, post_order_dfs_edges, leaf_vertices, a_star, add_vertex
 using NamedGraphs: NamedEdge, rename_vertices
 using NamedGraphs.PartitionedGraphs: PartitionEdge, partitionvertices, partitionedges, partitioned_graph,
     unpartitioned_graph, PartitionVertex, boundary_partitionedges, PartitionedGraph, partitioned_vertices,
     which_partition, partitionvertex
 using ITensorNetworks: ITensorNetwork, AbstractITensorNetwork, IndsNetwork, random_tensornetwork, BeliefPropagationCache, QuadraticFormNetwork, ket_network,
     linkinds, underlying_graph, messages, indsnetwork, update, norm_sqr_network, message, factor, partitioned_tensornetwork, tensornetwork, normalize_messages,
-    region_scalar, update_factors, default_edge_sequence, default_bp_maxiter, default_message_update
-using ITensors: ITensors, siteinds, delta, uniqueinds, Index, scalar, denseblocks, orthogonalize, inner
+    region_scalar, update_factors, default_edge_sequence, default_bp_maxiter, default_message_update, factors
+using ITensors: ITensors, siteinds, delta, uniqueinds, Index, scalar, denseblocks, orthogonalize, inner, expect
 using ITensorMPS: ITensorMPS, MPS, MPO
 using SplitApplyCombine: group
 using Dictionaries: set!
 using Random
-using LinearAlgebra: LinearAlgebra, normalize, norm
+using LinearAlgebra: LinearAlgebra, normalize, norm, tr
 using Dictionaries: Dictionary
 
 include("graph_utils.jl")

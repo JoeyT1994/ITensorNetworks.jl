@@ -2,37 +2,35 @@ include("utils.jl")
 
 Random.seed!(1634)
 ITensors.disable_warn_order()
-χ = 2
-g = lieb_lattice(9,9; periodic = false)
-#g = named_grid((2,2))
+χ = 5
+#g = lieb_lattice(11,11; periodic = false)
+g = heavy_hexagonal_lattice_graph(3,6)
+#g = named_grid((10, 5))
 #g = named_hexagonal_lattice_graph(8,8)
 #g = named_grid_periodic_x((8,8))
 
 Lx, Ly = maximum(vertices(g))
+@show Lx, Ly
+group_by_xpos = false
 s = siteinds("S=1/2", g)
 ψ = random_tensornetwork(ComplexF64, s; link_space = χ)
 ψ = noprime(normalize(ψ; alg = "bp"))
-v_measure = (5,5)
+v_measure = first(center(g))
 
-ranks = [2,4, 8]
+expect_bp = only(expect(ψ, "Y", [v_measure]; alg = "bp"))
+println("BP expectation value is $expect_bp")
 
-# ψIψ_bpc = initialize_cache(ψ; rank = 2)
-# pe = PartitionEdge(2=>1)
-# m1 = update_message_planar(ψIψ_bpc, pe; niters = 10)
-# m2 = get_column(ψIψ_bpc, PartitionVertex(2))
-# m2 = [m2[(v, "ket")]*m2[(v, "operator")]*m2[(v, "bra")] for v in first.(vertices(m1))]
-# @show inner(MPS(m2), MPS(m1)) / sqrt(inner(MPS(m2), MPS(m2))*inner(MPS(m1), MPS(m1)))
+ranks = [1,2,3,4,5,6, 8, 10, 12, 14, 16]
+rdms = ITensor[]
 
-for r in ranks
+for (i, r) in enumerate(ranks)
     @show r
-    ψIψ_bpc = initialize_cache(ψ; rank = r)
-    pv_measure = partitionvertex(ψIψ_bpc, (v_measure, "operator"))
-    seq = PartitionEdge.(post_order_dfs_edges(partitioned_graph(ψIψ_bpc), parent(pv_measure)))
-    ψIψ_bpc = update_planar(ψIψ_bpc; maxiter = 1, tol = 1e-8, niters=10, overlap_tol = 1e-10)
-    @show expect_planar(ψIψ_bpc, s, "Z", v_measure)
-    @show expect_planar_exact(ψIψ_bpc, s, "Z", v_measure)
+    ψIψ_bpc = initialize_cache(ψ; rank = r, group_by_xpos)
+    ψIψ_bpc = update_planar(ψIψ_bpc; maxiter = 1, tol = 1e-8, niters=50, overlap_tol = 1e-10, group_by_xpos)
+    rdm = one_site_rdm_planar(ψIψ_bpc, v_measure; group_by_xpos)
+    @show expect_planar(ψIψ_bpc,s,  "Y", v_measure; group_by_xpos)
+    push!(rdms, rdm)
+    if i > 1
+        @show norm(rdms[i] - rdms[i-1])
+    end
 end
-
-
-#ψIψ_bpc = update_planar(ψIψ_bpc; maxiter = 1, tol = 1e-16, niters=50, overlap_tol = 1e-16)
-

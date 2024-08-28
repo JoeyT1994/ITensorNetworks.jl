@@ -45,10 +45,10 @@ end
 
 
 function optimise(ϕ, A::ITensorNetwork, ψ::ITensorNetwork; cache_update_kwargs = (; maxiter = 20, tol = 1e-8),
-    niters::Int64=10, overlap_tol = 1e-10)
+    niters::Int64=10, overlap_tol = 1e-10, kwargs...)
 
     update_seq = default_update_seq(ψ)
-    ϕAψ_bpc =build_sandwich(ψ, A, ϕ)
+    ϕAψ_bpc =build_sandwich(ψ, A, ϕ; kwargs...)
     ortho_centre = nothing
     ϕAψs = zeros(ComplexF64, (niters, length(update_seq)))
     for i in 1:niters
@@ -56,7 +56,6 @@ function optimise(ϕ, A::ITensorNetwork, ψ::ITensorNetwork; cache_update_kwargs
             ψ, ϕAψ_bpc, ortho_centre = bp_updater(ψ, ϕAψ_bpc, v, ortho_centre)
             local_state = bp_extracter(ϕAψ_bpc, v)
             ψ, ϕAψ_bpc, ϕAψs[i, j] = bp_inserter(local_state, ψ, ϕAψ_bpc, v)
-            #@show ϕAψs[i, j]
         end
 
 

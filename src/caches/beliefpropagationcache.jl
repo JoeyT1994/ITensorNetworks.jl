@@ -162,9 +162,12 @@ function environment(bp_cache::BeliefPropagationCache, verts::Vector)
   return vcat(messages, central_tensors)
 end
 
+function factors(bp_cache::BeliefPropagationCache, verts::Vector)
+  return ITensor[tensornetwork(bp_cache)[v] for v in verts]
+end
+
 function factor(bp_cache::BeliefPropagationCache, vertex::PartitionVertex)
-  ptn = partitioned_tensornetwork(bp_cache)
-  return collect(eachtensor(subgraph(ptn, vertex)))
+  return factors(bp_cache, vertices(bp_cache, vertex))
 end
 
 """
