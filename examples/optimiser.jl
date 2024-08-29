@@ -66,5 +66,5 @@ function optimise(ϕ, A::ITensorNetwork, ψ::ITensorNetwork; cache_update_kwargs
         end
     end
     #@show mean(ϕAψs[niters, :]), mean(ϕAψs[niters - 1, :])
-    return dag(ψ)
+    return dag(ψ), ϕAψs[niters, length(update_seq)]
 end

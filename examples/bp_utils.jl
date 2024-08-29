@@ -10,7 +10,7 @@ function update_message_planar(ψIψ_bpc::BeliefPropagationCache, pe::PartitionE
     else
         Φ, A, Ψ = nothing, get_column(ψIψ_bpc, src(pe)), message(ψIψ_bpc, pe)
     end
-    Ψnew = optimise(Φ, A, Ψ; kwargs...)
+    Ψnew, f = optimise(Φ, A, Ψ; kwargs...)
 
     return Ψnew
 end
@@ -184,4 +184,21 @@ function expect_planar_exact(ψIψ_bpc::BeliefPropagationCache, s::IndsNetwork, 
     numer = contract(tn; sequence = seq)[]
     
     return numer / denom
+end
+
+#Note that region should consist of contiguous vertices here!
+function rdm(ψ::ITensorNetwork, region; (cache!) = nothing, cache_update_kwargs = (;))
+    cache = isnothing(cache!) ? update(BeliefPropagationCache(QuadraticFormNetwork(ψ)); cache_update_kwargs...) : cache![]
+    ψIψ = tensornetwork(cache)
+
+    state_tensors = vcat(
+        ITensor[ψIψ[ket_vertex(ψIψ, v)] for v in region],
+        ITensor[ψIψ[bra_vertex(ψIψ, v)] for v in region],
+    )
+    env = environment(cache, PartitionVertex.(region))
+
+    rdm = contract(ITensor[env; state_tensors]; sequence = "automatic")
+    rdm /= tr(rdm)
+
+    return rdm
 end

@@ -9,8 +9,10 @@ using NamedGraphs.PartitionedGraphs: PartitionEdge, partitionvertices, partition
     which_partition, partitionvertex
 using ITensorNetworks: ITensorNetwork, AbstractITensorNetwork, IndsNetwork, random_tensornetwork, BeliefPropagationCache, QuadraticFormNetwork, ket_network,
     linkinds, underlying_graph, messages, indsnetwork, update, norm_sqr_network, message, factor, partitioned_tensornetwork, tensornetwork, normalize_messages,
-    region_scalar, update_factors, default_edge_sequence, default_bp_maxiter, default_message_update, factors
-using ITensors: ITensors, siteinds, delta, uniqueinds, Index, scalar, denseblocks, orthogonalize, inner, expect
+    region_scalar, update_factors, default_edge_sequence, default_bp_maxiter, default_message_update, factors, ket_vertex, bra_vertex, contract_boundary_mps,
+      combine_linkinds
+using ITensors: ITensors, siteinds, delta, uniqueinds, Index, scalar, denseblocks, orthogonalize, inner, expect, apply,
+  combiner
 using ITensorMPS: ITensorMPS, MPS, MPO
 using SplitApplyCombine: group
 using Dictionaries: set!
@@ -21,6 +23,7 @@ using Dictionaries: Dictionary
 include("graph_utils.jl")
 include("bp_utils.jl")
 include("optimiser.jl")
+include("boundary_mps_brute.jl")
 
 function LinearAlgebra.normalize(
     ψ::ITensorNetwork,
@@ -64,4 +67,17 @@ function MPS_truncate(ψ::AbstractITensorNetwork; cutoff = 1e-16)
     ψ_MPS = MPS(ψ)
     ψ_MPS = truncate(ψ_MPS; cutoff)
     return ITensorNetwork([v => ψ_MPS[i] for (i,v) in enumerate(vs)])
+end
+
+function flatten_quadratic_form(ψOψ::QuadraticFormNetwork)
+  return ITensorNetwork([v => ψOψ[(v, "ket")]*ψOψ[(v, "operator")]*ψOψ[(v, "bra")] for v in unique(first.(vertices(ψOψ)))])
+end
+
+function combine_siteinds(ψ::ITensorNetwork)
+  ψ = copy(ψ)
+  s = siteinds(ψ)
+  for v in vertices(ψ)
+    ψ[v] = ψ[v] * combiner(s[v])
+  end
+  return ψ
 end
