@@ -1,18 +1,21 @@
-using Graphs: merge_vertices, has_edge, is_tree, center
+using Graphs: merge_vertices, has_edge, is_tree, center, degree
 using NamedGraphs: NamedGraph, vertices, src, dst
 using NamedGraphs.NamedGraphGenerators: named_grid, named_hexagonal_lattice_graph
 using NamedGraphs.GraphsExtensions: rem_vertex, subgraph, edges, neighbors, add_edges, add_edge, rem_edge,
-    rem_edge!, rem_edges, post_order_dfs_edges, leaf_vertices, a_star, add_vertex
+    rem_edge!, rem_edges, post_order_dfs_edges, leaf_vertices, a_star, add_vertex, decorate_graph_edges, add_vertices!,
+    add_edge!
 using NamedGraphs: NamedEdge, rename_vertices
 using NamedGraphs.PartitionedGraphs: PartitionEdge, partitionvertices, partitionedges, partitioned_graph,
     unpartitioned_graph, PartitionVertex, boundary_partitionedges, PartitionedGraph, partitioned_vertices,
-    which_partition, partitionvertex
+    which_partition, partitionvertex, partitionedge
 using ITensorNetworks: ITensorNetwork, AbstractITensorNetwork, IndsNetwork, random_tensornetwork, BeliefPropagationCache, QuadraticFormNetwork, ket_network,
     linkinds, underlying_graph, messages, indsnetwork, update, norm_sqr_network, message, factor, partitioned_tensornetwork, tensornetwork, normalize_messages,
     region_scalar, update_factors, default_edge_sequence, default_bp_maxiter, default_message_update, factors, ket_vertex, bra_vertex, contract_boundary_mps,
-      combine_linkinds
+    dual_index_map
+      combine_linkinds, neighbor_vertices
+using ITensorNetworks.ModelHamiltonians: ising
 using ITensors: ITensors, siteinds, delta, uniqueinds, Index, scalar, denseblocks, orthogonalize, inner, expect, apply,
-  combiner
+  combiner, Trotter, commonind, replaceind, map_diag!
 using ITensorMPS: ITensorMPS, MPS, MPO
 using SplitApplyCombine: group
 using Dictionaries: set!
@@ -24,6 +27,7 @@ include("graph_utils.jl")
 include("bp_utils.jl")
 include("optimiser.jl")
 include("boundary_mps_brute.jl")
+include("beliefpropagationfunctions.jl")
 
 function LinearAlgebra.normalize(
     ψ::ITensorNetwork,

@@ -37,3 +37,43 @@ function heavy_hexagonal_lattice_graph(nx::Int64, ny::Int64)
     end
     return g
 end
+
+function ibm_processor_grid()
+    g = named_grid((15,13))
+    for row in [2,6,10]
+        for col in [1,2,4,5,6,8,9,10,12,13,14]
+            g = rem_vertex(g, (col, row))
+        end
+    end
+
+    for row in [4,8,12]
+        for col in [2,3,4,6,7,8,10,11,12,14,15]
+            g = rem_vertex(g, (col, row))
+        end
+    end
+
+    g = rem_vertex(g, (1,1))
+    g = rem_vertex(g, (15,13))
+    return g
+end
+
+function ibm_processor_grid_periodic_x()
+    g = named_grid((16,13))
+    for row in [2,6,10]
+        for col in [1,2,4,5,6,8,9,10,12,13,14, 16]
+            g = rem_vertex(g, (col, row))
+        end
+    end
+
+    for row in [4,8,12]
+        for col in [2,3,4,6,7,8,10,11,12,14,15, 16]
+            g = rem_vertex(g, (col, row))
+        end
+    end
+
+    for v in filter(v -> first(v) == 16, collect(vertices(g)))
+        g = add_edge(g, NamedEdge(v => (1, last(v))))
+    end
+
+    return g
+end
