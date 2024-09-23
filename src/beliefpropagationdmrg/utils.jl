@@ -35,7 +35,8 @@ using ITensorNetworks:
   operator_vertex,
   default_cache_update_kwargs,
   dual_index_map,
-  norm_sqr_network
+  norm_sqr_network,
+  to_callable
 using DataGraphs: underlying_graph
 using ITensorNetworks.ModelHamiltonians: heisenberg
 using ITensors:
@@ -296,4 +297,32 @@ function filter_zero_terms(H::OpSum)
     end
   end
   return new_H
+end
+
+function generic_spin_hamiltonian(g::AbstractGraph; Jx=0, Jy = 0, Jz = 0, hx=0, hy = 0, hz = 0)
+  (; Jx,Jy,Jz,hx,hy,hz) = map(to_callable, (; Jx,Jy,Jz,hx,hy,hz))
+  ℋ = OpSum()
+  for e in edges(g)
+    if !iszero(Jz(e))
+        ℋ += Jz(e), "Z", src(e), "Z", dst(e)
+    end
+    if !iszero(Jy(e))
+        ℋ += Jy(e), "Y", src(e), "Y", dst(e)
+    end
+    if !iszero(Jx(e))
+        ℋ += Jx(e), "X", src(e), "X", dst(e)
+    end
+  end
+  for v in vertices(g)
+    if !iszero(hz(v))
+        ℋ += hz(v), "Z", v
+    end
+    if !iszero(hx(v))
+        ℋ += hx(v), "X", v
+    end
+    if !iszero(hy(v))
+        ℋ += hy(v), "Y", v
+    end
+  end
+  return ℋ
 end

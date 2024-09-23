@@ -2,6 +2,7 @@ using NamedGraphs: edges
 using NamedGraphs.NamedGraphGenerators: named_grid
 using NamedGraphs.GraphsExtensions: forest_cover, default_root_vertex, vertices, dfs_tree, undirected_graph,
     bfs_tree
+using ITensorNetworks: IndsNetwork
 
 function opsum_to_edge_term_dict(s::IndsNetwork, H::OpSum)
     es = edges(s)
