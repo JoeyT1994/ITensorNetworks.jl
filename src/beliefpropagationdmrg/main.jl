@@ -14,11 +14,11 @@ Random.seed!(58484)
 disable_warn_order()
 
 function main()
-  L = 20
+  L = 6
   g = named_grid((L, 1); periodic = true)
   L = length(vertices(g))
   hamiltonian_params = (; hx = 0.5, hz = -0.4, Jx = 1.1, Jz = -0.3)
-  χ = 2
+  χ = 3
   s = siteinds("S=1/2", g; conserve_qns = false)
   ψ0 = random_tensornetwork(s; link_space = χ)
 
