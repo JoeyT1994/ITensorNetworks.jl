@@ -39,6 +39,7 @@ StructWalk = "31cdf514-beb7-4750-89db-dda9d2eb8d3d"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 TupleTools = "9d95972d-f1c8-5527-a6e0-b4b365fa01f6"
+Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [weakdeps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
