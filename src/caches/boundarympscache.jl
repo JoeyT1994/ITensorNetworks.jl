@@ -96,6 +96,16 @@ function virtual_index_dimension(
   ))
 end
 
+function ITensorNetwork(bmpsc::BoundaryMPSCache, partitionpair::Pair)
+  pes = planargraph_sorted_partitionedges(bmpsc, partitionpair)
+  pes_mod = map(pe -> (parent(src(pe)), parent(dst(pe))), pes)
+  return ITensorNetwork(pes_mod, [only(message(bmpsc, pe)) for pe in pes])
+end
+
+function BilinearFormNetwork(bmpsc::BoundaryMPSCache, partition)
+  
+
+
 #Vertices of the planargraph
 function planargraph_vertices(bmpsc::BoundaryMPSCache, partition)
   return vertices(ppg(bmpsc), PartitionVertex(partition))
