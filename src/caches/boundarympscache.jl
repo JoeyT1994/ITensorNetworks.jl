@@ -297,7 +297,7 @@ end
 #Update all messages tensors within a partition by finding the path needed
 function partition_update(bmpsc::BoundaryMPSCache, args...)
   return update(
-    Algorithm("simplebp"),
+    Algorithm("bp"),
     bmpsc,
     partition_update_sequence(bmpsc, args...);
     message_update_function_kwargs=(; normalize=false),
